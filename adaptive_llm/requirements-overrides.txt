@@ -1,0 +1,18 @@
+# Packages deliberately installed at a version one of our pinned dependencies
+# forbids. run.sh installs this file with `--no-deps`, AFTER requirements.txt,
+# because pip cannot resolve an override against a dependency's own pin -- it
+# reports ResolutionImpossible and installs nothing at all. Keep this list
+# short, and keep a reason on every line.
+
+# vLLM 0.8.3 requires gguf==0.10.0. That version cannot be used here at all:
+# its GGUFReader calls ndarray.newbyteorder(), removed in NumPy 2, so it fails
+# to open any GGUF file; and it predates Gemma 3, whose architecture vLLM's
+# GGUF loader looks up by name in gguf.MODEL_ARCH_NAMES. The API vLLM actually
+# uses (GGUFReader, GGML_QUANT_SIZES, get_tensor_name_map,
+# GGMLQuantizationType) is unchanged across this range, and gguf is a
+# pure-Python package with no compiled parts, so the override is safe.
+# Verified against MedGemma 27B Q4_K_M on 0.17.1 and 0.19.0. The upper bound is
+# there because this is a compatibility bridge, not a dependency we track:
+# raise it once a newer release has actually been loaded and generated with.
+# See docs/VLLM_GGUF.md.
+gguf>=0.17.1,<0.20

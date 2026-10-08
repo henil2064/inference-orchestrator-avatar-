@@ -1,0 +1,12 @@
+<clickhouse>
+  <!-- The host browser reaches Docker through its bridge address, not the
+       container's loopback. The Compose port remains bound to 127.0.0.1, so
+       this permissive rule is development-local only. -->
+  <users>
+    <default>
+      <networks replace="replace">
+        <ip>::/0</ip>
+      </networks>
+    </default>
+  </users>
+</clickhouse>

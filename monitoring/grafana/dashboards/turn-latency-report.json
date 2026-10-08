@@ -1,0 +1,41 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 0,
+  "id": null,
+  "panels": [
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Per-turn phase latency. The selected Grafana time range is applied to session close time, matching report_recent_sessions.py.",
+      "fieldConfig": {
+        "defaults": {"unit": "ms", "decimals": 1},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Turns"}, "properties": [{"id": "unit", "value": "short"}, {"id": "decimals", "value": 0}]}
+        ]
+      },
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"cellHeight": "sm", "footer": {"enablePagination": false}, "showHeader": true},
+      "targets": [
+        {
+          "format": 1,
+          "queryType": "sql",
+          "refId": "A",
+          "rawSql": "WITH selected_sessions AS (SELECT session_id FROM (SELECT session_id, max(closed_at_ms) AS closed_at_ms FROM pipeline.session_summaries GROUP BY session_id HAVING max(pipeline.session_summaries.closed_at_ms) BETWEEN $__from AND $__to)), turn_latency AS (SELECT * FROM pipeline.pipeline_events WHERE event_type = 'turn.latency' AND status = 'ok' AND session_id IN (SELECT session_id FROM selected_sessions)) SELECT * FROM (SELECT 'Time to first audio' AS Phase, avgIf(vad_endpoint_to_first_audio_ms, isNotNull(vad_endpoint_to_first_audio_ms)) AS Average, quantileIf(0.50)(vad_endpoint_to_first_audio_ms, isNotNull(vad_endpoint_to_first_audio_ms)) AS p50, quantileIf(0.95)(vad_endpoint_to_first_audio_ms, isNotNull(vad_endpoint_to_first_audio_ms)) AS p95, countIf(isNotNull(vad_endpoint_to_first_audio_ms)) AS Turns FROM turn_latency UNION ALL SELECT 'STT', avgIf(stt_endpoint_to_final_ms, isNotNull(stt_endpoint_to_final_ms)), quantileIf(0.50)(stt_endpoint_to_final_ms, isNotNull(stt_endpoint_to_final_ms)), quantileIf(0.95)(stt_endpoint_to_final_ms, isNotNull(stt_endpoint_to_final_ms)), countIf(isNotNull(stt_endpoint_to_final_ms)) FROM turn_latency UNION ALL SELECT 'LLM Queue', avgIf(llm_queue_ms, isNotNull(llm_queue_ms)), quantileIf(0.50)(llm_queue_ms, isNotNull(llm_queue_ms)), quantileIf(0.95)(llm_queue_ms, isNotNull(llm_queue_ms)), countIf(isNotNull(llm_queue_ms)) FROM turn_latency UNION ALL SELECT 'LLM Encode', avgIf(llm_encode_ms, isNotNull(llm_encode_ms)), quantileIf(0.50)(llm_encode_ms, isNotNull(llm_encode_ms)), quantileIf(0.95)(llm_encode_ms, isNotNull(llm_encode_ms)), countIf(isNotNull(llm_encode_ms)) FROM turn_latency UNION ALL SELECT 'LLM Decode', avgIf(llm_decode_ms, isNotNull(llm_decode_ms)), quantileIf(0.50)(llm_decode_ms, isNotNull(llm_decode_ms)), quantileIf(0.95)(llm_decode_ms, isNotNull(llm_decode_ms)), countIf(isNotNull(llm_decode_ms)) FROM turn_latency UNION ALL SELECT 'Phrase Generation', avgIf(phrase_generation_ms, isNotNull(phrase_generation_ms)), quantileIf(0.50)(phrase_generation_ms, isNotNull(phrase_generation_ms)), quantileIf(0.95)(phrase_generation_ms, isNotNull(phrase_generation_ms)), countIf(isNotNull(phrase_generation_ms)) FROM turn_latency UNION ALL SELECT 'TTS Queue', avgIf(tts_queue_ms, isNotNull(tts_queue_ms)), quantileIf(0.50)(tts_queue_ms, isNotNull(tts_queue_ms)), quantileIf(0.95)(tts_queue_ms, isNotNull(tts_queue_ms)), countIf(isNotNull(tts_queue_ms)) FROM turn_latency UNION ALL SELECT 'TTS First PCM', avgIf(tts_first_pcm_ms, isNotNull(tts_first_pcm_ms)), quantileIf(0.50)(tts_first_pcm_ms, isNotNull(tts_first_pcm_ms)), quantileIf(0.95)(tts_first_pcm_ms, isNotNull(tts_first_pcm_ms)), countIf(isNotNull(tts_first_pcm_ms)) FROM turn_latency UNION ALL SELECT 'Media Edge Queue', avgIf(media_edge_queue_ms, isNotNull(media_edge_queue_ms)), quantileIf(0.50)(media_edge_queue_ms, isNotNull(media_edge_queue_ms)), quantileIf(0.95)(media_edge_queue_ms, isNotNull(media_edge_queue_ms)), countIf(isNotNull(media_edge_queue_ms)) FROM turn_latency) ORDER BY multiIf(Phase = 'Time to first audio', 1, Phase = 'STT', 2, Phase = 'LLM Queue', 3, Phase = 'LLM Encode', 4, Phase = 'LLM Decode', 5, Phase = 'Phrase Generation', 6, Phase = 'TTS Queue', 7, Phase = 'TTS First PCM', 8, 9)"
+        }
+      ],
+      "title": "Turn Phase Latency",
+      "type": "table"
+    }
+  ],
+  "schemaVersion": 41,
+  "tags": ["NEW","turn-latency", "pipeline"],
+  "templating": {"list": [
+    {"current": {"selected": true, "text": "ClickHouse", "value": "clickhouse"}, "hide": 2, "includeAll": false, "multi": false, "name": "clickhouse", "options": [], "query": "grafana-clickhouse-datasource", "refresh": 1, "type": "datasource"}
+  ]},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {"refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h"], "time_options": ["5m", "15m", "30m", "1h", "6h", "12h", "24h", "2d", "7d"]},
+  "title": "Turn Latency Report",
+  "uid": "turn-latency-report",
+  "version": 1
+}

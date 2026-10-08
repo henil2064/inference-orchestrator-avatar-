@@ -1,0 +1,303 @@
+services:
+  media-edge:
+    build:
+      context: .
+      dockerfile: docker/media-edge.Dockerfile
+    image: inference-orchestrator/media-edge:local
+    env_file:
+      - path: ./media-edge/.env
+        required: false
+    environment:
+      EDGE_ADDR: ${EDGE_ADDR:-:8443}
+      EDGE_ORCHESTRATOR: ${EDGE_ORCHESTRATOR:-orchestrator:50051}
+      # Serve HTTPS by default so browser microphones work from another device.
+      # Set EDGE_NO_TLS=1 only for local HTTP development.
+      EDGE_NO_TLS: ${EDGE_NO_TLS:-0}
+      EDGE_METRICS_ADDR: ${EDGE_METRICS_ADDR:-:9101}
+      # Phase 2 bounded overload: a defensive backstop above ORCH_MAX_SESSIONS
+      # (the authoritative admission cap -- see orchestrator env below), so a
+      # burst rejects at the edge before even opening a signaling connection.
+      EDGE_MAX_SESSIONS: ${EDGE_MAX_SESSIONS:-32}
+      EDGE_CERT_DIR: /var/lib/media-edge/certs
+      EDGE_PROFILE: /app/profile.json
+      EDGE_ONNX_LIB: /usr/local/lib/onnxruntime/libonnxruntime.so
+      EDGE_VAD_MODEL: /app/models/silero_vad.onnx
+    ports:
+      - "${EDGE_PORT:-8443}:8443"
+      - "${EDGE_METRICS_PORT:-9101}:9101"
+    volumes:
+      - edge-certs:/var/lib/media-edge/certs
+      - ./media-edge/profile.json:/app/profile.json:ro
+      - ./media-edge/models:/app/models:ro
+    depends_on:
+      orchestrator:
+        condition: service_started
+    restart: unless-stopped
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: docker/orchestrator.Dockerfile
+    image: inference-orchestrator/orchestrator:local
+    env_file:
+      - path: ./orchestrator/.env
+        required: false
+    environment:
+      STT_TARGET: ${STT_TARGET:-stt:50052}
+      LLM_TARGET: ${LLM_TARGET:-adaptive-llm:50053}
+      TTS_TARGET: ${TTS_TARGET:-tts:50054}
+      ORCH_METRICS_HOST: ${ORCH_METRICS_HOST:-0.0.0.0}
+      ORCH_METRICS_PORT: ${ORCH_METRICS_PORT:-${ORCHESTRATOR_METRICS_PORT:-9102}}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
+      # Phase 2 bounded overload: the authoritative session admission cap.
+      # Sized to this box's measured backend capacity (STT_MAX_INFLIGHT=8,
+      # TTS 1+MAX_QUEUE=5); not a load-tested ceiling, revisit in Phase 3.
+      ORCH_MAX_SESSIONS: ${ORCH_MAX_SESSIONS:-16}
+      # Bounds concurrent LLM+TTS launches across all sessions (independent
+      # of how many are merely connected) and the end-to-end turn deadline
+      # (clock starts at END_TURN, never resets -- see server.py). 0 disables
+      # the deadline; defaults live in code, set here only to override.
+      ORCH_MAX_ACTIVE_TURNS: ${ORCH_MAX_ACTIVE_TURNS:-4}
+      ORCH_MAX_QUEUED_TURNS: ${ORCH_MAX_QUEUED_TURNS:-12}
+      ORCH_TURN_DEADLINE_S: ${ORCH_TURN_DEADLINE_S:-30}
+    ports:
+      - "127.0.0.1:${ORCHESTRATOR_PORT:-50051}:50051"
+      - "${ORCH_METRICS_PORT:-${ORCHESTRATOR_METRICS_PORT:-9102}}:${ORCH_METRICS_PORT:-${ORCHESTRATOR_METRICS_PORT:-9102}}"
+    depends_on:
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      stt:
+        condition: service_started
+      adaptive-llm:
+        condition: service_started
+      tts:
+        condition: service_started
+    restart: unless-stopped
+
+  stt:
+    build:
+      context: .
+      dockerfile: docker/stt.Dockerfile
+      args:
+        STT_RUNTIME: ${STT_RUNTIME:-onnx}
+        TORCH_INDEX_URL: ${STT_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    image: inference-orchestrator/stt:local
+    env_file:
+      - path: ./stt/.env
+        required: false
+    environment:
+      STT_ADDR: ${STT_ADDR:-[::]:50052}
+      # STT is CPU-only ONNX by default; the backend selects the bundled
+      # directory matching the variant (including fp16).
+      STT_RUNTIME: ${STT_RUNTIME:-onnx}
+      STT_ONNX_PROVIDER: cpu
+      STT_METRICS_HOST: ${STT_METRICS_HOST:-0.0.0.0}
+      STT_METRICS_PORT: ${STT_METRICS_PORT:-9103}
+    volumes:
+      - ./stt/models:/app/stt/models:ro
+    expose:
+      - "50052"
+    ports:
+      - "${STT_METRICS_PORT:-9103}:${STT_METRICS_PORT:-9103}"
+    restart: unless-stopped
+
+  tts:
+    build:
+      context: .
+      dockerfile: docker/tts.Dockerfile
+      args:
+        TORCH_INDEX_URL: https://download.pytorch.org/whl/cpu
+    image: inference-orchestrator/tts:local
+    env_file:
+      - path: ./tts/.env
+        required: false
+    environment:
+      TTS_ADDR: ${TTS_ADDR:-[::]:50054}
+      # Docker mounts ./tts/models at /app/tts/models. Do not use host paths here.
+      TTS_MODEL_DIR: /app/tts/models/indic-mio-q8/indic-mio-q8.gguf
+      TTS_PROMPT_WAV: /app/tts/sample/harvard.wav
+      TTS_FORMAT: gguf
+      TTS_N_GPU_LAYERS: "0"
+      TTS_DEVICE: cpu
+      TTS_METRICS_HOST: ${TTS_METRICS_HOST:-0.0.0.0}
+      TTS_METRICS_PORT: ${TTS_METRICS_PORT:-9104}
+    volumes:
+      - ./tts/models:/app/tts/models:ro
+    expose:
+      - "50054"
+    ports:
+      - "${TTS_METRICS_PORT:-9104}:${TTS_METRICS_PORT:-9104}"
+    restart: unless-stopped
+
+  adaptive-llm:
+    build:
+      context: .
+      dockerfile: docker/adaptive-llm.Dockerfile
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}
+    image: inference-orchestrator/adaptive-llm:local
+    env_file:
+      - path: ./adaptive_llm/.env
+        required: false
+    environment:
+      LLM_ADDR: ${LLM_ADDR:-[::]:50053}
+      # Docker mounts ./adaptive_llm/models at /app/adaptive_llm/models.
+      LLM_MODEL_DIR: /app/adaptive_llm/models
+      LLM_METRICS_HOST: ${LLM_METRICS_HOST:-0.0.0.0}
+      LLM_METRICS_PORT: ${LLM_METRICS_PORT:-9106}
+      LLM_WORKER_METRICS_HOST: ${LLM_WORKER_METRICS_HOST:-0.0.0.0}
+      LLM_WORKER_METRICS_PORT: ${LLM_WORKER_METRICS_PORT:-9114}
+      LD_LIBRARY_PATH: /usr/local/lib/python3.12/site-packages/nvidia/cu13/lib
+    volumes:
+      - ./adaptive_llm/models:/app/adaptive_llm/models
+      - ./adaptive_llm/run:/app/adaptive_llm/run
+    expose:
+      - "50053"
+    ports:
+      - "${LLM_METRICS_PORT:-9106}:${LLM_METRICS_PORT:-9106}"
+      - "${LLM_WORKER_METRICS_PORT:-9114}:${LLM_WORKER_METRICS_PORT:-9114}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    container_name: inference-orchestrator-clickhouse
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./monitoring/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./monitoring/clickhouse/dev-user.xml:/etc/clickhouse-server/users.d/99-dev-user.xml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    container_name: inference-orchestrator-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      # Regenerated by scripts/run_pipeline.py on every launch (Phase 3
+      # STT/TTS replica scrape discovery) -- Prometheus re-reads it live.
+      - ./monitoring/targets:/etc/prometheus/targets:ro
+      - prometheus-data:/prometheus
+    extra_hosts:
+      # host.docker.internal isn't built in on plain Linux Docker (unlike
+      # Docker Desktop) -- scrape targets in prometheus.yml need this to
+      # reach media-edge/orchestrator/stt/tts/adaptive-llm running as bare
+      # host processes per the documented dev workflow.
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    container_name: inference-orchestrator-node-exporter
+    # Phase 3 host exporter: the 5 pipeline services run as bare host
+    # processes, so this reads the real host's CPU/mem/disk, not a
+    # container's -- needs host PID + read-only host mounts, not privileged.
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    restart: unless-stopped
+
+  gpu-exporter:
+    # dcgm-exporter was tried first (the doc's original suggestion) but
+    # returns zero metrics on this GTX 1650 -- DCGM's field set doesn't cover
+    # consumer/GeForce GPUs. nvidia_gpu_exporter wraps nvidia-smi directly and
+    # was verified to expose real utilization/VRAM/clock metrics on this box.
+    image: utkuozdemir/nvidia_gpu_exporter:1.3.1
+    container_name: inference-orchestrator-gpu-exporter
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: inference-orchestrator-cadvisor
+    # Container-level stats for the Redis/ClickHouse/Grafana/Prometheus
+    # containers only -- the 5 pipeline services are bare processes and
+    # never appear here (see node-exporter above for their host resources).
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.2
+    container_name: inference-orchestrator-grafana
+    environment:
+      GF_PLUGINS_PREINSTALL: grafana-clickhouse-datasource
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: inference-orchestrator-redis
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    ports:
+      # Local services run outside Docker use 6380; Compose services use the
+      # internal redis:6379 address. Keeping 6379 free avoids host conflicts.
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  clickhouse-data:
+  grafana-data:
+  prometheus-data:
+  redis-data:
+  edge-certs:

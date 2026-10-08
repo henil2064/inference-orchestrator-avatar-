@@ -1,0 +1,201 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "description": "Deep-dive for tuning and release comparison: per-stage worker latency, throughput (RTF), prefix-cache effectiveness, and per-config/version tables. Filter by model/engine/device. For caller-felt latency use Voice Agent KPIs; for one call use Session Detail.",
+  "links": [
+    {"asDropdown": false, "icon": "external link", "tags": [], "title": "Voice Agent KPIs", "type": "link", "url": "/d/inference-pipeline-kpis"},
+    {"asDropdown": false, "icon": "external link", "tags": [], "title": "Session Detail", "type": "link", "url": "/d/inference-session-detail"}
+  ],
+  "panels": [
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "id": 100, "title": "LLM — the stage that gates first audio", "type": "row"},
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Time-to-first-token p95 — the LLM latency that actually gates the caller's first audio (not the full reply).",
+      "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 1}, "id": 1,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT quantile(0.95)(ttft_ms) AS value FROM pipeline.pipeline_events WHERE event_type='llm.completed' AND status='ok' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})", "refId": "A"}],
+      "title": "LLM TTFT p95", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Full-reply decode p95. This runs while the caller is already hearing the reply, so it's throughput, not felt latency.",
+      "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 1}, "id": 2,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT quantile(0.95)(decode_ms) AS value FROM pipeline.pipeline_events WHERE event_type='llm.completed' AND status='ok' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})", "refId": "A"}],
+      "title": "LLM decode p95", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Admission queue wait p95. Rising queue means the LLM is saturated.",
+      "fieldConfig": {"defaults": {"unit": "ms", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 100}, {"color": "red", "value": 500}]}}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 1}, "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT quantile(0.95)(queue_ms) AS value FROM pipeline.pipeline_events WHERE event_type='llm.completed' AND status='ok' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})", "refId": "A"}],
+      "title": "LLM queue p95", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Decode throughput — output tokens per second (average).",
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 1}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 1}, "id": 4,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT avg(decode_tokens_per_second) AS value FROM pipeline.pipeline_events WHERE event_type='llm.completed' AND status='ok' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})", "refId": "A"}],
+      "title": "Decode tokens/sec", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Independent p95s of the LLM's own signals over time — queue, prompt build, TTFT, decode. These are separate measurements, not additive stages.",
+      "fieldConfig": {"defaults": {"unit": "ms", "custom": {"drawStyle": "line", "fillOpacity": 8}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 5}, "id": 5,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT toStartOfFiveMinutes(toDateTime(intDiv(event_time_ms,1000))) AS time, quantile(0.95)(queue_ms) AS queue_ms, quantile(0.95)(prompt_build_ms) AS prompt_build_ms, quantile(0.95)(ttft_ms) AS ttft_ms, quantile(0.95)(decode_ms) AS decode_ms FROM pipeline.pipeline_events WHERE event_type='llm.completed' AND status='ok' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) GROUP BY time ORDER BY time", "refId": "A"}],
+      "title": "LLM latency signals — independent p95s", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Per config/version: volume, success rate, and the LLM p95s. Sort by ttft to find the config that gates first audio the worst.",
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 13}, "id": 6,
+      "options": {"cellHeight": "sm", "showHeader": true, "sortBy": [{"desc": true, "displayName": "calls"}]},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT pipeline_version, model, engine, device, gpu_uuid, count() AS calls, round(countIf(status='ok')/nullIf(count(),0)*100,2) AS success_pct, round(quantile(0.95)(ttft_ms),0) AS ttft_p95_ms, round(quantile(0.95)(decode_ms),0) AS decode_p95_ms, round(quantile(0.95)(queue_ms),0) AS queue_p95_ms, round(avg(decode_tokens_per_second),1) AS avg_tok_s, round(avg(input_tokens),0) AS avg_in_tok, round(avg(output_tokens),0) AS avg_out_tok FROM pipeline.pipeline_events WHERE event_type='llm.completed' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) GROUP BY pipeline_version, model, engine, device, gpu_uuid ORDER BY calls DESC", "refId": "A"}],
+      "title": "LLM by config / release", "type": "table"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "The slowest individual LLM calls (full reply). Copy a session_id into Session Detail for the full trace.",
+      "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 22}, "id": 7,
+      "options": {"cellHeight": "sm", "showHeader": true, "sortBy": [{"desc": true, "displayName": "reply_ms"}]},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT session_id, turn_id, model, engine, device, round(duration_ms,0) AS reply_ms, round(ttft_ms,0) AS ttft_ms, round(decode_ms,0) AS decode_ms, round(queue_ms,0) AS queue_ms, input_tokens, output_tokens, error_class FROM pipeline.pipeline_events WHERE event_type='llm.completed' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) ORDER BY reply_ms DESC LIMIT 50", "refId": "A"}],
+      "title": "Worst LLM calls", "type": "table"
+    },
+
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 30}, "id": 101, "title": "LLM prefix cache — is the shared system prompt / history staying warm?", "type": "row"},
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Token-weighted: of all prompt tokens sent, the fraction the engine served from cache. Higher = cheaper prefill.",
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 40}, {"color": "green", "value": 70}]}}, "overrides": []},
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 31}, "id": 8,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT 100*sum(cached_prompt_tokens)/nullIf(sum(input_tokens),0) AS value FROM pipeline.pipeline_events WHERE event_type='llm.completed' AND status='ok' AND cached_prompt_tokens IS NOT NULL AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})", "refId": "A"}],
+      "title": "Prefix-cache hit rate (token-weighted)", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Fraction of LLM calls that got ANY prefix-cache hit.",
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []},
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 31}, "id": 9,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT 100*countIf(prefix_cache_hit)/nullIf(count(),0) AS value FROM pipeline.pipeline_events WHERE event_type='llm.completed' AND status='ok' AND cached_prompt_tokens IS NOT NULL AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})", "refId": "A"}],
+      "title": "Requests with a cache hit", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "TTFT p95 split by whether the prompt hit the prefix cache. The gap is the concrete latency the cache buys you.",
+      "fieldConfig": {"defaults": {"unit": "ms", "custom": {"drawStyle": "line", "fillOpacity": 8}}, "overrides": []},
+      "gridPos": {"h": 5, "w": 12, "x": 12, "y": 31}, "id": 10,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT toStartOfFiveMinutes(toDateTime(intDiv(event_time_ms,1000))) AS time, quantileIf(0.95)(ttft_ms, prefix_cache_hit=1) AS hit_ttft_p95, quantileIf(0.95)(ttft_ms, prefix_cache_hit=0) AS miss_ttft_p95 FROM pipeline.pipeline_events WHERE event_type='llm.completed' AND status='ok' AND cached_prompt_tokens IS NOT NULL AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) GROUP BY time ORDER BY time", "refId": "A"}],
+      "title": "TTFT p95 — cache hits vs misses", "type": "timeseries"
+    },
+
+    {"collapsed": true, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 36}, "id": 102, "title": "STT — throughput & padding (capacity, not felt latency)", "type": "row", "panels": [
+      {
+        "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+        "description": "Segment real-time factor p95 — compute seconds per audio second. < 1 means faster than real time.",
+        "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+        "gridPos": {"h": 5, "w": 6, "x": 0, "y": 37}, "id": 11,
+        "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+        "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT quantile(0.95)(realtime_factor) AS value FROM pipeline.pipeline_events WHERE event_type='stt.segment_profile' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})", "refId": "A"}],
+        "title": "STT segment RTF p95", "type": "stat"
+      },
+      {
+        "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+        "description": "Fraction of transcribed audio that was silence padding (bounds tensor shapes). High = wasted compute.",
+        "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+        "gridPos": {"h": 5, "w": 6, "x": 6, "y": 37}, "id": 12,
+        "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+        "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT avg(padded_seconds/nullIf(audio_seconds+padded_seconds,0)) AS value FROM pipeline.pipeline_events WHERE event_type='stt.segment_profile' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})", "refId": "A"}],
+        "title": "STT padding fraction", "type": "stat"
+      },
+      {
+        "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+        "description": "STT worker signal p95s over time — queue, encode, decode, compute.",
+        "fieldConfig": {"defaults": {"unit": "ms", "custom": {"drawStyle": "line", "fillOpacity": 8}}, "overrides": []},
+        "gridPos": {"h": 5, "w": 12, "x": 12, "y": 37}, "id": 13,
+        "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+        "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT toStartOfFiveMinutes(toDateTime(intDiv(event_time_ms,1000))) AS time, quantile(0.95)(queue_ms) AS queue_ms, quantile(0.95)(encode_ms) AS encode_ms, quantile(0.95)(decode_ms) AS decode_ms, quantile(0.95)(compute_ms) AS compute_ms FROM pipeline.pipeline_events WHERE event_type='stt.segment_profile' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) GROUP BY time ORDER BY time", "refId": "A"}],
+        "title": "STT worker signals — segment p95s", "type": "timeseries"
+      },
+      {
+        "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+        "description": "STT by config/release — segment-level.",
+        "fieldConfig": {"defaults": {}, "overrides": []},
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 42}, "id": 14,
+        "options": {"cellHeight": "sm", "showHeader": true, "sortBy": [{"desc": true, "displayName": "segments"}]},
+        "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT pipeline_version, model, engine, device, gpu_uuid, count() AS segments, round(quantile(0.95)(compute_ms),0) AS compute_p95_ms, round(quantile(0.95)(realtime_factor),3) AS rtf_p95, round(avg(audio_seconds),2) AS avg_audio_s, round(avg(padded_seconds/nullIf(audio_seconds+padded_seconds,0)),3) AS padding_fraction FROM pipeline.pipeline_events WHERE event_type='stt.segment_profile' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) GROUP BY pipeline_version, model, engine, device, gpu_uuid ORDER BY segments DESC", "refId": "A"}],
+        "title": "STT by config / release", "type": "table"
+      }
+    ]},
+
+    {"collapsed": true, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 37}, "id": 103, "title": "TTS — throughput & real-time factor (capacity, not first-audio latency)", "type": "row", "panels": [
+      {
+        "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+        "description": "Reply real-time factor p95 — synth seconds per audio second. < 1 means TTS renders faster than playback (streaming keeps up).",
+        "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+        "gridPos": {"h": 5, "w": 6, "x": 0, "y": 38}, "id": 15,
+        "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+        "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT quantile(0.95)(realtime_factor) AS value FROM pipeline.pipeline_events WHERE event_type='tts.completed' AND status='ok' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})", "refId": "A"}],
+        "title": "TTS RTF p95", "type": "stat"
+      },
+      {
+        "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+        "description": "Total synthesis compute p95 per reply (sum across the reply's sentences).",
+        "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": []},
+        "gridPos": {"h": 5, "w": 6, "x": 6, "y": 38}, "id": 16,
+        "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+        "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT quantile(0.95)(service_proc_ms) AS value FROM pipeline.pipeline_events WHERE event_type='tts.completed' AND status='ok' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})", "refId": "A"}],
+        "title": "TTS synth compute p95", "type": "stat"
+      },
+      {
+        "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+        "description": "TTS reply signals over time — synth compute p95, RTF p95, request volume.",
+        "fieldConfig": {"defaults": {"unit": "ms", "custom": {"drawStyle": "line", "fillOpacity": 8}}, "overrides": [{"matcher": {"id": "byName", "options": "rtf_p95"}, "properties": [{"id": "unit", "value": "short"}, {"id": "custom.axisPlacement", "value": "right"}]}]},
+        "gridPos": {"h": 5, "w": 12, "x": 12, "y": 38}, "id": 17,
+        "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+        "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT toStartOfFiveMinutes(toDateTime(intDiv(event_time_ms,1000))) AS time, quantile(0.95)(service_proc_ms) AS synth_p95_ms, quantile(0.95)(realtime_factor) AS rtf_p95, count() AS requests FROM pipeline.pipeline_events WHERE event_type='tts.completed' AND status='ok' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) GROUP BY time ORDER BY time", "refId": "A"}],
+        "title": "TTS reply signals — p95s", "type": "timeseries"
+      },
+      {
+        "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+        "description": "TTS by config/release.",
+        "fieldConfig": {"defaults": {}, "overrides": []},
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 43}, "id": 18,
+        "options": {"cellHeight": "sm", "showHeader": true, "sortBy": [{"desc": true, "displayName": "replies"}]},
+        "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT pipeline_version, model, engine, device, gpu_uuid, count() AS replies, round(quantile(0.95)(service_proc_ms),0) AS synth_p95_ms, round(quantile(0.95)(realtime_factor),3) AS rtf_p95, round(quantile(0.95)(audio_seconds),2) AS audio_p95_s FROM pipeline.pipeline_events WHERE event_type='tts.completed' AND status='ok' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) GROUP BY pipeline_version, model, engine, device, gpu_uuid ORDER BY replies DESC", "refId": "A"}],
+        "title": "TTS by config / release", "type": "table"
+      }
+    ]}
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["inference", "models", "performance"],
+  "templating": {
+    "list": [
+      {"current": {}, "hide": 0, "includeAll": false, "label": "ClickHouse", "name": "clickhouse", "options": [], "query": "grafana-clickhouse-datasource", "refresh": 1, "type": "datasource"},
+      {"current": {"selected": true, "text": "All", "value": "$__all"}, "hide": 0, "includeAll": true, "label": "Model", "multi": true, "name": "model", "options": [], "query": "SELECT DISTINCT model FROM pipeline.pipeline_events WHERE model != '' ORDER BY model", "refresh": 2, "type": "query", "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"}},
+      {"current": {"selected": true, "text": "All", "value": "$__all"}, "hide": 0, "includeAll": true, "label": "Engine", "multi": true, "name": "engine", "options": [], "query": "SELECT DISTINCT engine FROM pipeline.pipeline_events WHERE engine != '' ORDER BY engine", "refresh": 2, "type": "query", "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"}},
+      {"current": {"selected": true, "text": "All", "value": "$__all"}, "hide": 0, "includeAll": true, "label": "Device", "multi": true, "name": "device", "options": [], "query": "SELECT DISTINCT device FROM pipeline.pipeline_events WHERE device != '' ORDER BY device", "refresh": 2, "type": "query", "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"}}
+    ]
+  },
+  "time": {"from": "now-24h", "to": "now"},
+  "timezone": "browser",
+  "title": "Model & Release Deep-Dive",
+  "uid": "inference-model-performance",
+  "version": 3,
+  "weekStart": ""
+}

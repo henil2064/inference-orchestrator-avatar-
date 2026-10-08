@@ -1,0 +1,26 @@
+# Adaptive facade + vLLM + llama.cpp. SGLang runs in its own environment:
+# current SGLang and vLLM CUDA/Torch stacks cannot safely share one venv.
+grpcio
+grpcio-health-checking  # readiness/liveness (Phase 3)
+protobuf>=7.35.1
+prometheus-client>=0.20
+psutil>=5.9
+# MedGemma 1.5 records Transformers 4.57.1 in its model config. Transformers
+# 5 rewrites Gemma 3 RoPE settings into a nested form that CUDA-12.4 vLLM 0.8.3
+# cannot parse. Keep this driver-compatible pair together on R550 hosts.
+transformers==4.57.1
+vllm==0.8.3
+# NOTE: serving a GGUF with vLLM additionally needs a newer `gguf` than the
+# gguf==0.10.0 vLLM 0.8.3 pins. It cannot be listed here -- pip resolves the
+# two together, fails with ResolutionImpossible, and installs nothing. It
+# lives in requirements-overrides.txt, which run.sh installs afterwards with
+# --no-deps. Installing this file by hand leaves GGUF support broken until you
+# do the same; the worker says so at startup.
+bitsandbytes>=0.50.0  # on-the-fly int8/nf4 weight quantization for tight-VRAM cards (e.g. GTX 1650)
+huggingface-hub>=0.25
+# CAUTION for CUDA offload (LLM_ENGINE=llama.cpp with LLM_N_GPU_LAYERS>0): a
+# plain `pip install -r requirements.txt` installs PyPI's prebuilt CPU-only
+# wheel and silently discards any CUDA build -- see tts/requirements.txt for
+# the identical trap and its rebuild command (same package, separate venv;
+# each must be built with CUDA independently).
+llama-cpp-python>=0.3.8

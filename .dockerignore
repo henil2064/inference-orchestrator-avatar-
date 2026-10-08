@@ -1,0 +1,17 @@
+.git
+.gitignore
+.env
+**/.env
+**/.venv
+**/.venv-*
+**/__pycache__
+**/.pytest_cache
+**/models
+**/received
+**/recordings
+**/*.pyc
+**/orchestrator_sessions.json
+tts/tts-profile-last.wav
+media-edge/certs
+media-edge/third_party
+docker-compose.override.yml

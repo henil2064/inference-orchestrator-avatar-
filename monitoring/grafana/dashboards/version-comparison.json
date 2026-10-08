@@ -1,0 +1,369 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${clickhouse}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT quantile(0.95)(duration_ms) AS value FROM pipeline.pipeline_events WHERE event_type='llm.completed' AND status='ok' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) AND match(pipeline_version, '^(${pipeline_version:regex})$')",
+          "refId": "A"
+        }
+      ],
+      "title": "Selected-version LLM end-to-end p95",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${clickhouse}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT quantile(0.95)(ttft_ms) AS value FROM pipeline.pipeline_events WHERE event_type='llm.completed' AND status='ok' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) AND match(pipeline_version, '^(${pipeline_version:regex})$')",
+          "refId": "A"
+        }
+      ],
+      "title": "Selected-version TTFT p95",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${clickhouse}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT quantile(0.95)(realtime_factor) AS value FROM pipeline.pipeline_events WHERE event_type='stt.segment_profile' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) AND match(pipeline_version, '^(${pipeline_version:regex})$')",
+          "refId": "A"
+        }
+      ],
+      "title": "Selected-version STT RTF p95",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${clickhouse}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT toStartOfFiveMinutes(toDateTime(intDiv(event_time_ms,1000))) AS time, pipeline_version AS metric, quantile(0.95)(duration_ms) AS value FROM pipeline.pipeline_events WHERE event_type='llm.completed' AND status='ok' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) AND match(pipeline_version, '^(${pipeline_version:regex})$') GROUP BY time, pipeline_version ORDER BY time, metric",
+          "refId": "A"
+        }
+      ],
+      "title": "LLM p95 by selected version",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${clickhouse}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "id": 5,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "llm_calls"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT pipeline_version, countIf(event_type='llm.completed') AS llm_calls, round(quantileIf(0.95)(duration_ms,event_type='llm.completed' AND status='ok'),0) AS llm_e2e_p95_ms, round(quantileIf(0.95)(ttft_ms,event_type='llm.completed' AND status='ok'),0) AS ttft_p95_ms, round(avgIf(decode_tokens_per_second,event_type='llm.completed' AND status='ok'),1) AS avg_decode_tok_s, countIf(event_type='stt.segment_profile') AS stt_segments, round(quantileIf(0.95)(realtime_factor,event_type='stt.segment_profile'),3) AS stt_rtf_p95, countIf(event_type='tts.completed') AS tts_calls, round(quantileIf(0.95)(duration_ms,event_type='tts.completed' AND status='ok'),0) AS tts_e2e_p95_ms, round(quantileIf(0.95)(compute_ms,event_type='tts.completed' AND status='ok'),0) AS tts_compute_p95_ms, round(quantileIf(0.95)(time_to_first_audio_ms,event_type='tts.first_audio_queued' AND status='ok' AND time_to_first_audio_ms > 0),0) AS endpoint_to_first_pcm_p95_ms FROM pipeline.pipeline_events WHERE event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) AND match(pipeline_version, '^(${pipeline_version:regex})$') GROUP BY pipeline_version ORDER BY llm_calls DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Release comparison",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${clickhouse}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      },
+      "id": 6,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "duration_ms"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT session_id, pipeline_version, toDateTime(intDiv(closed_at_ms,1000)) AS closed_at, outcome, closed_at_ms-started_at_ms AS duration_ms, JSONExtractUInt(totals_json,'turns') AS turns, JSONExtractUInt(totals_json,'llm_calls') AS llm_calls FROM pipeline.session_summaries WHERE closed_at_ms BETWEEN $__from AND $__to AND session_id IN (SELECT DISTINCT session_id FROM pipeline.pipeline_events WHERE model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})) AND match(pipeline_version, '^(${pipeline_version:regex})$') ORDER BY duration_ms DESC LIMIT 100",
+          "refId": "A"
+        }
+      ],
+      "title": "Sessions for selected version",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 25},
+      "id": 7,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT toStartOfFiveMinutes(toDateTime(intDiv(event_time_ms,1000))) AS time, pipeline_version AS metric, quantile(0.95)(time_to_first_audio_ms) AS value FROM pipeline.pipeline_events WHERE event_type='tts.first_audio_queued' AND status='ok' AND time_to_first_audio_ms > 0 AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) AND match(pipeline_version, '^(${pipeline_version:regex})$') GROUP BY time, pipeline_version ORDER BY time, metric", "refId": "A"}],
+      "title": "Endpoint → first PCM p95 by selected version", "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": [
+    "inference",
+    "performance",
+    "version"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "ClickHouse",
+        "name": "clickhouse",
+        "options": [],
+        "query": "grafana-clickhouse-datasource",
+        "refresh": 1,
+        "type": "datasource"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "${clickhouse}"
+        },
+        "includeAll": true,
+        "label": "Pipeline version",
+        "multi": true,
+        "name": "pipeline_version",
+        "options": [],
+        "query": "SELECT DISTINCT pipeline_version FROM pipeline.pipeline_events ORDER BY pipeline_version",
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "${clickhouse}"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "label": "Model",
+        "multi": true,
+        "name": "model",
+        "options": [],
+        "query": "SELECT DISTINCT model FROM pipeline.pipeline_events WHERE model != '' ORDER BY model",
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "${clickhouse}"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "label": "Engine",
+        "multi": true,
+        "name": "engine",
+        "options": [],
+        "query": "SELECT DISTINCT engine FROM pipeline.pipeline_events WHERE engine != '' ORDER BY engine",
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "${clickhouse}"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "label": "Device",
+        "multi": true,
+        "name": "device",
+        "options": [],
+        "query": "SELECT DISTINCT device FROM pipeline.pipeline_events WHERE device != '' ORDER BY device",
+        "refresh": 2,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Inference Version Comparison",
+  "uid": "inference-version-comparison",
+  "version": 1,
+  "weekStart": ""
+}

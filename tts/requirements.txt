@@ -1,0 +1,38 @@
+grpcio>=1.68
+grpcio-tools>=1.68
+grpcio-health-checking  # readiness/liveness for the orchestrator's replica fan-out (Phase 3)
+protobuf>=7.35.1
+prometheus-client>=0.20
+numpy>=2.0
+transformers>=4.40,<5
+torch
+torchaudio
+# GGUF/MioTTS backend dependencies. The image needs these when TTS_FORMAT=gguf.
+# CAUTION for CUDA offload (TTS_N_GPU_LAYERS>0): a plain `pip install -r
+# requirements.txt` installs PyPI's prebuilt CPU-only wheel and silently
+# discards any CUDA build. run.sh only reinstalls when this file's hash
+# changes, so a from-source CUDA build survives until this file is next
+# edited -- at which point run.sh's normal `pip install -r requirements.txt`
+# will reinstall the CPU wheel over it with no error (llamacpp_backend.py's
+# own startup check catches this: it refuses to start with TTS_N_GPU_LAYERS>0
+# against a CPU-only build rather than silently running the backbone on
+# CPU). Rebuild with CUDA after any change here:
+#   CMAKE_ARGS="-DGGML_CUDA=on -DCMAKE_CUDA_ARCHITECTURES=75" \
+#     tts/.venv/bin/pip install llama-cpp-python --force-reinstall --no-cache-dir --no-deps
+# (add -DCMAKE_CUDA_ARCHITECTURES=<your GPU's compute capability>; 75 is Turing).
+llama-cpp-python>=0.3.8
+git+https://github.com/Aratako/MioCodec.git
+# Torchaudio 2.9+ delegates audio decoding (including the reference WAV) to
+# TorchCodec.
+torchcodec
+soundfile
+safetensors
+einops
+vocos
+huggingface_hub
+# DhVaani's bundled ZipVoice utilities import SummaryWriter at module load,
+# including on inference-only code paths.
+tensorboard
+# Imported by the bundled ZipVoice inference helpers (WAV prompts do not need
+# ffmpeg, but the Python package must still be present).
+pydub

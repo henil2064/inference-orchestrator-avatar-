@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+// Orchestrator <-> STT contract. One bidi stream per voice session: the
+// orchestrator sends the session's decoded 16 kHz mono PCM16 upstream; the STT
+// service streams back one Transcript per bounded audio segment (never a
+// revisable partial) — see stt/service/server.py for the segment-cut design.
+//
+// This seam is model-agnostic on purpose — the service behind it can be any STT
+// engine. (Phase 1 uses SraVaani; the vLLM streaming_transcribe design in
+// PLAN.md was dropped with the model swap.)
+package asr.v1;
+
+service Asr {
+  rpc Transcribe(stream AsrClientEvent) returns (stream Transcript);
+}
+
+// Raw PCM16 (little-endian, 16 kHz, mono) — exactly what the media edge decodes.
+message AudioChunk {
+  string session_id = 1;
+  bytes  pcm16      = 2;
+  int64  ts_ms      = 3;
+}
+
+message Control {
+  enum Type {
+    UNSPECIFIED   = 0;
+    SESSION_OPEN  = 1;
+    SESSION_CLOSE = 2;
+    END_TURN      = 3;  // endpointer fired: finalize this turn, reset the window
+  }
+  string session_id = 1;
+  Type   type       = 2;
+  int64  ts_ms      = 3;
+}
+
+message AsrClientEvent {
+  oneof msg {
+    AudioChunk audio   = 1;
+    Control    control = 2;
+  }
+}
+
+message Transcript {
+  string session_id    = 1;
+  string text          = 2;
+  // Every Transcript is a complete, non-revisable piece of text (STT no longer
+  // emits provisional partials — see stt/service/server.py). turn_complete is true only
+  // for the segment that coincides with real END_TURN / session-close; a future
+  // consumer reconstructs full turn text by joining, in segment_index order, all
+  // Transcripts for a session_id up to and including the next turn_complete=true.
+  bool   turn_complete = 3;  // renamed from is_final; field number unchanged (wire-compatible)
+  int64  ts_ms          = 4;
+  int64  proc_ms        = 5;  // STT-side wall time to produce this transcript (dispatch->result)
+  int32  segment_index  = 6;  // 0-based ordinal within the current turn; resets to 0 after turn_complete
+  InferenceProfile profile = 7; // service-side timings and runtime identity
+}
+
+// Model-specific profiling emitted with each immutable transcript. The stable
+// fields make cross-session analysis easy; attributes carries engine-specific
+// measurements without forcing a contract change for every experiment.
+message InferenceProfile {
+  string model = 1;
+  string engine = 2;
+  string device = 3;
+  string compute_type = 4;
+  double queue_ms = 5;
+  double compute_ms = 6;
+  double encode_ms = 7;
+  double decode_ms = 8;
+  double audio_seconds = 9;
+  double padded_seconds = 10;
+  double realtime_factor = 11;
+  map<string, string> attributes = 12;
+}

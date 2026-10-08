@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+// Orchestrator <-> TTS contract. The voice is selected by the TTS service's
+// configuration, never by a caller, so a client cannot use this service as an
+// arbitrary voice-cloning endpoint.
+package tts.v1;
+
+service Tts {
+  rpc Synthesize(SynthesizeRequest) returns (SynthesizeResponse);
+  // Emits independently synthesized sentence chunks as soon as each is ready.
+  // This is the low-latency path; Synthesize remains for legacy callers.
+  rpc SynthesizeStream(SynthesizeRequest) returns (stream SynthesizeChunk);
+}
+
+message SynthesizeRequest {
+  string session_id = 1;
+  string text = 2;
+  int64 ts_ms = 3;
+}
+
+message SynthesizeResponse {
+  string session_id = 1;
+  // Little-endian signed PCM, mono. sample_rate_hz is authoritative rather
+  // than assuming the media edge's 16 kHz microphone format.
+  bytes pcm16 = 2;
+  int32 sample_rate_hz = 3;
+  int64 ts_ms = 4;
+  int64 proc_ms = 5;
+  InferenceProfile profile = 6;
+}
+
+message SynthesizeChunk {
+  string session_id = 1;
+  bytes pcm16 = 2;
+  int32 sample_rate_hz = 3;
+  int32 chunk_index = 4;
+  bool is_last = 5;
+  int64 ts_ms = 6;
+  // Present on the first chunk. compute_ms is cumulative at each chunk.
+  InferenceProfile profile = 7;
+}
+
+message InferenceProfile {
+  string model = 1;
+  string engine = 2;
+  string device = 3;
+  string compute_type = 4;
+  double queue_ms = 5;
+  double compute_ms = 6;
+  double audio_seconds = 7;
+  double realtime_factor = 8;
+  map<string, string> attributes = 9;
+}

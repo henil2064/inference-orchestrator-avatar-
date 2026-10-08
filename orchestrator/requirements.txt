@@ -1,0 +1,7 @@
+grpcio>=1.68
+grpcio-tools>=1.68
+grpcio-health-checking  # exposes orchestrator readiness; also used client-side for STT/TTS replica fan-out (Phase 3)
+protobuf>=7.35.1  # committed *_pb2.py are gencode 7.35.1; runtime must be >= that or import fails
+prometheus-client>=0.20
+numpy>=2.0
+redis>=5.0

@@ -1,0 +1,13 @@
+# Runtime deps for llm/server.py. vLLM installs its own CUDA-matched torch — keep
+# this in its own venv, separate from stt/'s SraVaani env and orchestrator/'s env
+# (same rationale as stt/requirements-sravaani.txt: don't let pinned-torch deps clash).
+#
+# vLLM has NO official Windows support and GGUF loading is one of its less-traveled
+# paths (limited quantization/parallelism). Install/run this on the actual Linux/WSL
+# GPU box — see RUN_MEDGEMMA.md.
+vllm>=0.6.0
+transformers>=4.48.0     # AutoTokenizer + chat template for building the prompt
+grpcio
+protobuf>=7.35.1         # committed llm_pb2.py is gencode 7.35.1; runtime must be >= that or import fails
+prometheus-client>=0.20
+psutil        # CPU/RAM sampling for profile.py

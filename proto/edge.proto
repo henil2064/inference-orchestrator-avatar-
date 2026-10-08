@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+// Edge <-> Orchestrator contract (PRD §8.2). One bidi stream per voice session:
+// the Go media edge sends decoded 16 kHz mono PCM upstream; the orchestrator
+// sends TTS PCM + control back downstream. Phase 1 wires only the upstream leg
+// (audio forwarding); the downstream/control fields exist so later phases are a
+// fill-in, not a re-spec.
+package edge.v1;
+
+option go_package = "mondee/media-edge/internal/edgepb";
+
+service MediaBridge {
+  // Full-duplex: edge->orch (mic PCM + control), orch->edge (TTS PCM + control).
+  rpc Stream(stream ClientEvent) returns (stream ServerEvent);
+}
+
+// AudioFrame carries raw PCM16 (little-endian, mono). Client->server microphone
+// frames are always 16 kHz; server->client TTS frames set sample_rate_hz to the
+// model's output rate (DhVaani uses 24 kHz). ts_ms is a capture/emit timestamp.
+message AudioFrame {
+  string session_id = 1;
+  bytes  pcm16      = 2;
+  int64  ts_ms      = 3;
+  int32  sample_rate_hz = 4;
+  // Agent turn this frame belongs to (server->client only; 0 upstream). Without
+  // it a late frame from a barged-in turn is indistinguishable from the next
+  // turn's first frame, and every downstream state machine gets it wrong.
+  int64  turn_id    = 5;
+}
+
+message Control {
+  enum Type {
+    UNSPECIFIED         = 0;
+    SESSION_OPEN        = 1;
+    SESSION_CLOSE       = 2;
+    USER_SPEECH_STARTED = 3; // barge-in signal (edge -> orch)
+    STOP_PLAYBACK       = 4; // stop agent playback (orch -> edge)
+    END_TURN            = 5; // endpointer fired: user turn ended (edge -> orch)
+    // Agent turn lifecycle. The orchestrator is the only authority on whether a
+    // turn is still producing work: per-service "idle" is a service property and
+    // lies in the gap between two clauses of the same turn.
+    AGENT_TURN_STARTED  = 6; // orch -> edge: committed to answering turn_id
+    AGENT_TURN_ENDED    = 7; // orch -> edge: no further audio/text for turn_id
+    // edge -> client (over the data channel, never sent on this gRPC stream):
+    // the turn's audio has actually drained out of the playout buffer. This —
+    // not AGENT_TURN_ENDED — is what a UI should gate the mic and spinner on.
+    PLAYBACK_COMPLETE   = 8;
+    // edge -> orchestrator: first audio frame was emitted to the WebRTC track.
+    // proc_ms is measured locally from first PCM receipt to this moment.
+    // metadata["vad_endpoint_to_first_audio_ms"] is measured locally from
+    // the VAD endpoint to the first WebRTC frame emitted.
+    PLAYBACK_STARTED    = 9;
+  }
+  string session_id = 1;
+  Type   type       = 2;
+  int64  ts_ms      = 3;
+  // Compact VAD/decoder/session measurements. Only boundary controls carry
+  // these aggregates; audio frames deliberately remain telemetry-free.
+  map<string, string> metadata = 4;
+  int64 proc_ms = 5;
+  // Set on the agent-turn lifecycle controls above; 0 on session/VAD controls.
+  // AGENT_TURN_ENDED and PLAYBACK_COMPLETE carry metadata["reason"] =
+  // "complete" | "interrupted" | "error".
+  int64 turn_id = 6;
+}
+
+// AgentReply is text intended for the client UI. It traverses the existing
+// edge<->orchestrator gRPC stream, then the media edge relays it over the
+// session's ordered WebRTC data channel (never over the signaling WebSocket).
+message AgentReply {
+  string session_id = 1;
+  string text       = 2;
+  int64  ts_ms      = 3;
+  int64  proc_ms    = 4;
+  int64  turn_id    = 5;
+}
+
+message ClientEvent {
+  oneof msg {
+    AudioFrame audio   = 1;
+    Control    control = 2;
+  }
+}
+
+message ServerEvent {
+  oneof msg {
+    AudioFrame audio   = 1;
+    Control    control = 2;
+    AgentReply reply   = 3;
+  }
+}

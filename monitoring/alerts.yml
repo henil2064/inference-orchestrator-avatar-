@@ -1,0 +1,78 @@
+## Phase 3 alerting rules (docs/LOAD_SCALING_PLAN.md Phase 3 item 2).
+## Prometheus-native rules only -- visible in Prometheus's own Alerts UI and
+## readable from Grafana's Prometheus datasource. No Alertmanager/notification
+## routing is wired (no notification channel -- Slack/email -- was specified);
+## adding a receiver on top of these is a small follow-up, not a redesign.
+groups:
+  - name: pipeline-saturation
+    rules:
+      - alert: OldestQueuedWorkNearDeadline
+        # ORCH_TURN_DEADLINE_S defaults to 30s; 20s of queued age already
+        # consumes most of that budget before inference even starts.
+        expr: max(orch_stt_queue_oldest_age_seconds) > 20
+          or max(stt_segment_queue_oldest_age_seconds) > 20
+          or max(adaptive_llm_queue_oldest_age_seconds) > 20
+        for: 10s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Queued work is approaching the turn deadline"
+          description: "The oldest item in a bounded queue has waited >20s -- turns are at risk of hitting ORCH_TURN_DEADLINE_S before being served."
+
+      - alert: ElevatedStageErrorRate
+        expr: (
+            rate(orch_stt_stream_errors_total[2m]) + rate(orch_llm_errors_total[2m]) + rate(orch_tts_errors_total[2m])
+            + rate(stt_model_errors_total[2m]) + rate(tts_errors_total[2m]) + rate(adaptive_llm_errors_total[2m])
+          ) > 0.5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated backend error rate"
+          description: "Combined STT/LLM/TTS error rate has exceeded 0.5/s for 1m -- distinct from expected admission-control rejections (RESOURCE_EXHAUSTED), which are not counted here."
+
+      - alert: TelemetryFlushStalled
+        # NaN (telemetry disabled, or none has landed yet) never fires --
+        # only a *finite*, growing age does, which is the actual loss signal.
+        expr: orch_telemetry_last_flush_age_seconds > 30
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "ClickHouse telemetry has not flushed successfully in >30s"
+          description: "orch_telemetry_queue_depth and orch_telemetry_dropped_total show whether rows are backing up or being dropped outright."
+
+      - alert: TelemetryRowsDropping
+        expr: rate(orch_telemetry_dropped_total[2m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Telemetry rows are being dropped (queue full or ClickHouse insert failures)"
+
+  - name: pipeline-availability
+    rules:
+      - alert: ScrapeTargetDown
+        expr: up == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus cannot scrape {{ $labels.job }} ({{ $labels.instance }})"
+          description: "A replica may have crashed, be mid-restart (supervisor backoff), or the host process never started."
+
+      - alert: HostMemoryLow
+        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.10
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host memory available is below 10%"
+
+      - alert: HostDiskLow
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.10
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host disk free space is below 10% on {{ $labels.mountpoint }}"

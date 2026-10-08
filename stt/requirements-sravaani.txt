@@ -1,0 +1,13 @@
+# Runtime deps for scripts/sravaani_gpu.py. torch is installed SEPARATELY (CUDA build) —
+# see docs/RUN_SRAVAANI.md. Keep this out of the vLLM .venv; SraVaani needs its own env
+# so it can't clash with qwen-asr's pinned torch/vLLM (see docs/PLAN.md).
+transformers==4.48.3
+sentencepiece
+soundfile
+numpy
+grpcio        # STT gRPC service (stt/service/server.py)
+grpcio-health-checking  # readiness/liveness for the orchestrator's replica fan-out (Phase 3)
+protobuf>=7.35.1  # committed stt/proto/asr_pb2.py is gencode 7.35.1
+prometheus-client>=0.20
+psutil        # CPU/RAM sampling for STT_PROFILE_RES resource logger
+sounddevice   # only needed for --record (mic capture); drop it for file-only use

@@ -1,0 +1,23 @@
+{
+  "name": "voice",
+  "desc": "low buffers, quality degraded to phone-call grade",
+  "ptime_ms": 10,
+  "bitrate_bps": 24000,
+  "fec": true,
+  "max_playback_hz": 16000,
+  "mic_latency_ms": 5,
+  "high_priority": true,
+  "wake_lock": true,
+  "tune_answer": true,
+  "ring_ms": 60,
+  "player_ms": 10,
+  "device_ms": 10,
+  "trim_ms": 12,
+  "vad_enter_rms": 900,
+  "vad_exit_rms": 500,
+  "vad_attack_ms": 90,
+  "vad_hangover_ms": 500,
+  "vad_model_path": "",
+  "vad_speech_prob": 0.5,
+  "vad_silence_prob": 0.35
+}

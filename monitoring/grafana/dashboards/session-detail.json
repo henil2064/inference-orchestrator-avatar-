@@ -1,0 +1,167 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "description": "One session, judged the way the caller experiences it. Time-to-first-audio is the latency they feel; LLM decode and TTS synth are work that overlaps playback and is shown separately, never stacked into the felt number.",
+  "links": [
+    {"asDropdown": false, "icon": "external link", "tags": [], "title": "Voice Agent KPIs", "type": "link", "url": "/d/inference-pipeline-kpis"},
+    {"asDropdown": false, "icon": "external link", "tags": [], "title": "Model & Release Deep-Dive", "type": "link", "url": "/d/inference-model-performance"}
+  ],
+  "panels": [
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "id": 100, "title": "Session at a glance", "type": "row"},
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "fieldConfig": {"defaults": {"unit": "dateTimeAsIso"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1}, "id": 1,
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT toDateTime(intDiv(started_at_ms,1000)) AS value FROM pipeline.session_summaries WHERE session_id='${session_id}' ORDER BY closed_at_ms DESC LIMIT 1", "refId": "A"}],
+      "title": "Started", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 3, "x": 4, "y": 1}, "id": 2,
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT closed_at_ms-started_at_ms AS value FROM pipeline.session_summaries WHERE session_id='${session_id}' ORDER BY closed_at_ms DESC LIMIT 1", "refId": "A"}],
+      "title": "Duration", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Caller turns endpointed in this session.",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 3, "x": 7, "y": 1}, "id": 3,
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT countIf(event_type='vad.completed') AS value FROM pipeline.pipeline_events WHERE session_id='${session_id}'", "refId": "A"}],
+      "title": "Turns", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "THE number: median time from the orchestrator RECEIVING the caller's end-of-turn to it queueing the first PCM of the reply. Measured end to end on the orchestrator's monotonic clock, so it excludes edge\u2192orchestrator transport and the client's own playout buffer \u2014 it is not the instant the caller's speaker moves. Under ~600 ms feels instant.",
+      "fieldConfig": {"defaults": {"unit": "ms", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 600}, {"color": "red", "value": 1200}]}}, "overrides": []},
+      "gridPos": {"h": 4, "w": 4, "x": 10, "y": 1}, "id": 4,
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT round(quantile(0.50)(time_to_first_audio_ms),0) AS value FROM pipeline.pipeline_events WHERE session_id='${session_id}' AND event_type='tts.first_audio_queued' AND status='ok' AND time_to_first_audio_ms > 0", "refId": "A"}],
+      "title": "Time-to-first-audio p50", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Turns that produced audio but carry no time-to-first-audio, so they are absent from the p50 rather than counted as fast. Almost always a turn with no caller endpoint \u2014 STT's close-flush finalized it instead of the edge endpointer. The raw trace's ttfa_missing_reason says which.",
+      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}}, "overrides": []},
+      "gridPos": {"h": 4, "w": 3, "x": 14, "y": 1}, "id": 14,
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT countIf(event_type='tts.first_audio_queued' AND time_to_first_audio_ms IS NULL) AS value FROM pipeline.pipeline_events WHERE session_id='${session_id}'", "refId": "A"}],
+      "title": "Unmeasured turns", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Barge-ins in this session — the caller talked over the agent. Each one cancels the in-flight reply (interrupt controller).",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 3, "x": 17, "y": 1}, "id": 5,
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT countIf(event_type='turn.interrupted') AS value FROM pipeline.pipeline_events WHERE session_id='${session_id}'", "refId": "A"}],
+      "title": "Barge-ins", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Stage completions that failed in this session.",
+      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 1}, "id": 6,
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT countIf(status='error') AS value FROM pipeline.pipeline_events WHERE session_id='${session_id}'", "refId": "A"}],
+      "title": "Errors", "type": "stat"
+    },
+
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5}, "id": 101, "title": "Caller experience — time to first audio (the latency they feel)", "type": "row"},
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Per turn: endpoint → first PCM. This is the ONLY latency the caller experiences. Everything after first audio streams while they listen.",
+      "fieldConfig": {"defaults": {"unit": "ms", "custom": {"lineWidth": 1, "fillOpacity": 80, "gradientMode": "none"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 600}, {"color": "red", "value": 1200}]}, "color": {"mode": "thresholds"}}, "overrides": []},
+      "gridPos": {"h": 9, "w": 10, "x": 0, "y": 6}, "id": 7,
+      "options": {"orientation": "vertical", "showValue": "auto", "xTickLabelRotation": 0, "tooltip": {"mode": "single"}, "legend": {"showLegend": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT concat('T', toString(turn_id)) AS turn, round(maxIf(time_to_first_audio_ms, event_type='tts.first_audio_queued'),0) AS time_to_first_audio_ms FROM pipeline.pipeline_events WHERE session_id='${session_id}' AND turn_id>0 GROUP BY turn_id HAVING time_to_first_audio_ms>0 ORDER BY turn_id", "refId": "A"}],
+      "title": "Time-to-first-audio by turn", "type": "barchart"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Where those milliseconds go, from pure event timestamps. Every stage is stamped on the orchestrator's own clock as it observes the stage, so the four segments are sequential from the caller's endpoint to first PCM and sum to the ttfa_ms in the table below. They are not the same measurement, though: the segments are wall-clock differences while ttfa_ms is measured on the monotonic clock, so the two agree to rounding under a stable clock and drift apart only if the wall clock steps mid-turn \u2014 a mismatch is a signal, not noise. 'LLM \u2192 first clause' is time-to-first-token plus decoding the first sentence; 'first-clause synth' is TTS rendering it. A missing segment means the stage timestamps went backwards, which is a bug \u2014 it is left blank rather than shown as 0.",
+      "fieldConfig": {"defaults": {"unit": "ms", "custom": {"lineWidth": 0, "fillOpacity": 90, "stacking": {"mode": "normal", "group": "A"}}}, "overrides": []},
+      "gridPos": {"h": 9, "w": 14, "x": 10, "y": 6}, "id": 8,
+      "options": {"orientation": "horizontal", "showValue": "auto", "tooltip": {"mode": "multi", "sort": "none"}, "legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT concat('Turn ', toString(turn_id)) AS turn, if(vad_ms=0 OR stt_ms=0, NULL, if(stt_ms<vad_ms, NULL, stt_ms-vad_ms)) AS endpoint_to_stt_ms, if(stt_ms=0 OR llm_start_ms=0, NULL, if(llm_start_ms<stt_ms, NULL, llm_start_ms-stt_ms)) AS stt_to_llm_dispatch_ms, if(llm_start_ms=0 OR tts_start_ms=0, NULL, if(tts_start_ms<llm_start_ms, NULL, tts_start_ms-llm_start_ms)) AS llm_to_first_clause_ms, if(tts_start_ms=0 OR first_pcm_ms=0, NULL, if(first_pcm_ms<tts_start_ms, NULL, first_pcm_ms-tts_start_ms)) AS first_clause_synth_ms FROM (SELECT turn_id, maxIf(event_time_ms,event_type='vad.completed') AS vad_ms, maxIf(event_time_ms,event_type='stt.completed') AS stt_ms, maxIf(event_time_ms,event_type='llm.started') AS llm_start_ms, maxIf(event_time_ms,event_type='tts.started') AS tts_start_ms, maxIf(event_time_ms,event_type='tts.first_audio_queued') AS first_pcm_ms FROM pipeline.pipeline_events WHERE session_id='${session_id}' AND turn_id>0 GROUP BY turn_id) ORDER BY turn_id", "refId": "A"}],
+      "title": "First-audio breakdown — endpoint → STT → LLM → first clause (sums to felt latency)", "type": "barchart"
+    },
+
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 15}, "id": 102, "title": "Per-turn detail — felt latency vs work performed", "type": "row"},
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "ttfa_ms is what the caller felt. The columns to its right are WORK the pipeline did AFTER first audio — the LLM keeps decoding and TTS keeps synthesizing while the caller is already listening, so they overlap and must NOT be added to ttfa.",
+      "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": [
+        {"matcher": {"id": "byName", "options": "ttfa_ms"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-background"}}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 600}, {"color": "red", "value": 1200}]}}]},
+        {"matcher": {"id": "byName", "options": "tts_rtf"}, "properties": [{"id": "unit", "value": "short"}]},
+        {"matcher": {"id": "byName", "options": "out_tok"}, "properties": [{"id": "unit", "value": "short"}]}
+      ]},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 16}, "id": 9,
+      "options": {"cellHeight": "sm", "showHeader": true, "sortBy": [{"desc": false, "displayName": "turn"}]},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT turn_id AS turn, maxIf(model,event_type='llm.completed') AS llm_model, maxIf(model,event_type='tts.completed') AS tts_model, round(maxIf(time_to_first_audio_ms,event_type='tts.first_audio_queued'),0) AS ttfa_ms, round(maxIf(duration_ms,event_type='stt.completed'),0) AS stt_finalize_ms, round(maxIf(ttft_ms,event_type='llm.completed'),0) AS llm_ttft_ms, round(maxIf(decode_ms,event_type='llm.completed'),0) AS llm_decode_ms, round(maxIf(service_proc_ms,event_type='tts.completed'),0) AS tts_synth_ms, round(maxIf(realtime_factor,event_type='tts.completed'),3) AS tts_rtf, maxIf(output_tokens,event_type='llm.completed') AS out_tok, maxIf(status,event_type='tts.completed') AS tts_status FROM pipeline.pipeline_events WHERE session_id='${session_id}' AND turn_id>0 GROUP BY turn_id ORDER BY turn", "refId": "A"}],
+      "title": "Per-turn — felt latency (ttfa) + work performed (decode / synth, overlapping)", "type": "table"
+    },
+
+    {"collapsed": true, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 26}, "id": 103, "title": "Microscopes — per-worker detail (expand when debugging a stage)", "type": "row", "panels": [
+      {
+        "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+        "description": "One row per LLM turn: prefill/TTFT/decode, tokens, throughput, and how much history was fed in.",
+        "fieldConfig": {"defaults": {}, "overrides": []},
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 27}, "id": 10,
+        "options": {"cellHeight": "sm", "showHeader": true, "sortBy": [{"desc": false, "displayName": "turn"}]},
+        "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT turn_id AS turn, model, engine, device, round(queue_ms,0) AS queue_ms, round(prompt_build_ms,0) AS prompt_build_ms, round(ttft_ms,0) AS ttft_ms, round(decode_ms,0) AS decode_ms, input_tokens, output_tokens, round(decode_tokens_per_second,1) AS decode_tok_s, history_turns, message_count FROM pipeline.pipeline_events WHERE session_id='${session_id}' AND event_type='llm.completed' ORDER BY turn", "refId": "A"}],
+        "title": "LLM microscope", "type": "table"
+      },
+      {
+        "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+        "description": "Every STT worker segment (a turn is one or more bounded segments). RTF > 1 or high padding fraction means the segment cost more than its audio.",
+        "fieldConfig": {"defaults": {}, "overrides": []},
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 35}, "id": 11,
+        "options": {"cellHeight": "sm", "showHeader": true, "sortBy": [{"desc": false, "displayName": "turn"}]},
+        "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT turn_id AS turn, segment_index, turn_complete, model, round(queue_ms,0) AS queue_ms, round(compute_ms,0) AS compute_ms, round(audio_seconds,2) AS audio_s, round(padded_seconds,2) AS padding_s, round(realtime_factor,3) AS rtf FROM pipeline.pipeline_events WHERE session_id='${session_id}' AND event_type='stt.segment_profile' ORDER BY turn, segment_index", "refId": "A"}],
+        "title": "STT microscope — every worker segment", "type": "table"
+      },
+      {
+        "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+        "description": "One row per synthesized reply. tts_window_ms is the wall time TTS was active for the turn (first frame → last, streamed interleaved with the LLM); synth_ms is the actual compute; rtf = synth / audio.",
+        "fieldConfig": {"defaults": {}, "overrides": []},
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 43}, "id": 12,
+        "options": {"cellHeight": "sm", "showHeader": true, "sortBy": [{"desc": false, "displayName": "turn"}]},
+        "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT turn_id AS turn, model, engine, device, round(queue_ms,0) AS queue_ms, round(service_proc_ms,0) AS synth_ms, round(duration_ms,0) AS tts_window_ms, round(audio_seconds,2) AS audio_s, round(realtime_factor,3) AS rtf, sample_rate_hz, round(audio_bytes/1024,1) AS pcm_kib, status, error_class FROM pipeline.pipeline_events WHERE session_id='${session_id}' AND event_type='tts.completed' ORDER BY turn", "refId": "A"}],
+        "title": "TTS microscope — every synthesized reply", "type": "table"
+      }
+    ]},
+
+    {"collapsed": true, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 27}, "id": 104, "title": "Raw audit trace — every event, in order", "type": "row", "panels": [
+      {
+        "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+        "description": "The full ordered event stream for this session across every service — the escape hatch when the tables above don't explain something.",
+        "fieldConfig": {"defaults": {}, "overrides": []},
+        "gridPos": {"h": 12, "w": 24, "x": 0, "y": 28}, "id": 13,
+        "options": {"cellHeight": "sm", "showHeader": true, "sortBy": [{"desc": false, "displayName": "event_seq"}]},
+        "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT toDateTime(intDiv(event_time_ms,1000)) AS event_time, event_seq, turn_id, source, event_type, status, round(duration_ms,1) AS duration_ms, model, error_class, payload_json FROM pipeline.pipeline_events WHERE session_id='${session_id}' ORDER BY event_seq", "refId": "A"}],
+        "title": "Restricted raw audit trace", "type": "table"
+      }
+    ]}
+  ],
+  "refresh": "10s",
+  "schemaVersion": 41,
+  "tags": ["NEW","inference", "voice", "session"],
+  "templating": {
+    "list": [
+      {"current": {}, "hide": 0, "includeAll": false, "label": "ClickHouse", "name": "clickhouse", "options": [], "query": "grafana-clickhouse-datasource", "refresh": 1, "type": "datasource"},
+      {"current": {"selected": true, "text": "", "value": ""}, "hide": 0, "label": "Session ID", "name": "session_id", "options": [{"selected": true, "text": "", "value": ""}], "query": "", "skipUrlSync": false, "type": "textbox"}
+    ]
+  },
+  "time": {"from": "now-24h", "to": "now"},
+  "timezone": "browser",
+  "title": "Inference Session Detail",
+  "uid": "inference-session-detail",
+  "version": 3,
+  "weekStart": ""
+}

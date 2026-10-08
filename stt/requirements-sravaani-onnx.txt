@@ -1,0 +1,16 @@
+# ONNX SraVaani service runtime. torch is still needed for the model's supplied
+# feature-extraction tensors in preproc.pt; install a CPU or CUDA torch wheel
+# separately, just as the Transformers runtime does.
+# Includes CPUExecutionProvider too, so this one wheel supports both
+# STT_ONNX_PROVIDER=cpu and cuda.  The CPU-only onnxruntime package cannot
+# satisfy an explicit CUDAExecutionProvider request.
+# PyPI builds from 1.27 onwards target CUDA 13.  This service's PyTorch build
+# is CUDA 12.4 / cuDNN 9, so stay on the CUDA-12 / cuDNN-9 release line.
+onnxruntime-gpu>=1.21,<1.27
+sentencepiece
+numpy
+grpcio
+grpcio-health-checking  # readiness/liveness for the orchestrator's replica fan-out (Phase 3)
+protobuf>=7.35.1
+prometheus-client>=0.20
+psutil

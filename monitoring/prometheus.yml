@@ -1,0 +1,61 @@
+# Prometheus scrape config for the inference-orchestrator voice pipeline.
+# Services expose dedicated plain-HTTP metrics ports, separate from app ports.
+# They bind all interfaces by default, so localhost and the machine's LAN IP
+# both work when the service/port is reachable.
+#
+# Run:  docker compose up -d prometheus
+# UI:   http://localhost:9090  (Grafana is at http://localhost:3000)
+#
+# Targets use 127.0.0.1, not the compose service names: the
+# documented dev workflow (README.md "Run (three terminals)") runs
+# media-edge/orchestrator/stt as bare host processes, not containers, and
+# every service already publishes its metrics port to the host. Prometheus
+# itself runs in a container, so it must cross back out to the host network
+# to reach them -- container DNS names only resolve to other containers on
+# the compose network and silently fail (NXDOMAIN) for host-run services.
+# Phase 3: STT/TTS may run as more than one bare-process replica (scripts/
+# run_pipeline.py), each on its own metrics port -- a static target can only
+# ever see one, so those two jobs use file_sd_configs instead, reading
+# monitoring/targets/{stt,tts}.json (regenerated on every run_pipeline.py
+# launch; mounted read-only into this container, see docker-compose.yml).
+# Prometheus re-reads a changed file automatically -- no reload needed.
+global:
+  scrape_interval: 5s          # voice latencies move fast; 5s keeps histograms responsive
+  scrape_timeout: 4s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: media-edge       # Go edge (WebRTC, Opus decode, VAD)
+    static_configs:
+      - targets: ["127.0.0.1:9101"]
+  - job_name: orchestrator     # Python asyncio relay (edge <-> STT)
+    static_configs:
+      - targets: ["127.0.0.1:9102"]
+  - job_name: stt              # Python SraVaani service; one or more replicas
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/stt.json"]
+        refresh_interval: 10s
+  - job_name: tts              # Python TTS service; one or more replicas
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/tts.json"]
+        refresh_interval: 10s
+  - job_name: adaptive-llm     # Python adaptive LLM facade
+    static_configs:
+      - targets: ["127.0.0.1:9106"]
+  - job_name: adaptive-llm-worker
+    static_configs:
+      - targets: ["127.0.0.1:9114"]
+  - job_name: avatar           # Python avatar service (optional; down when not deployed)
+    static_configs:
+      - targets: ["127.0.0.1:9105"]
+  - job_name: node              # host CPU/mem/disk (node_exporter, Phase 3)
+    static_configs:
+      - targets: ["127.0.0.1:9100"]
+  - job_name: gpu                # NVIDIA GPU util/VRAM/clocks (Phase 3). dcgm-exporter was tried
+    static_configs:               # first but reports zero metrics on this consumer (GeForce) GPU
+      - targets: ["127.0.0.1:9835"]  # class -- nvidia_gpu_exporter (nvidia-smi-based) works instead.
+  - job_name: cadvisor           # container-level stats for redis/clickhouse/grafana/prometheus themselves
+    static_configs:
+      - targets: ["cadvisor:8080"]

@@ -1,0 +1,70 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "panels": [
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []},
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0}, "id": 1,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "refId": "A", "rawSql": "SELECT 100 * sum(cached_prompt_tokens) / nullIf(sum(input_tokens), 0) AS value FROM pipeline.pipeline_events WHERE event_type = 'llm.completed' AND status = 'ok' AND cached_prompt_tokens IS NOT NULL AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})"}],
+      "title": "Token-weighted prefix-cache hit rate", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []},
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0}, "id": 2,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "refId": "A", "rawSql": "SELECT 100 * countIf(prefix_cache_hit) / nullIf(count(), 0) AS value FROM pipeline.pipeline_events WHERE event_type = 'llm.completed' AND status = 'ok' AND cached_prompt_tokens IS NOT NULL AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})"}],
+      "title": "Requests with prefix-cache hit", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0}, "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "refId": "A", "rawSql": "SELECT quantile(0.95)(ttft_ms) AS value FROM pipeline.pipeline_events WHERE event_type = 'llm.completed' AND status = 'ok' AND cached_prompt_tokens IS NOT NULL AND prefix_cache_hit = 1 AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})"}],
+      "title": "Prefix-hit TTFT p95", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0}, "id": 4,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "refId": "A", "rawSql": "SELECT sum(cached_prompt_tokens) AS value FROM pipeline.pipeline_events WHERE event_type = 'llm.completed' AND status = 'ok' AND cached_prompt_tokens IS NOT NULL AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})"}],
+      "title": "Cached prompt tokens", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 5}, "id": 5,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi"}},
+      "targets": [{"format": 1, "queryType": "sql", "refId": "A", "rawSql": "SELECT toStartOfFiveMinutes(toDateTime(intDiv(event_time_ms,1000))) AS time, 100 * sum(cached_prompt_tokens) / nullIf(sum(input_tokens), 0) AS prefix_hit_pct FROM pipeline.pipeline_events WHERE event_type = 'llm.completed' AND status = 'ok' AND cached_prompt_tokens IS NOT NULL AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) GROUP BY time ORDER BY time"}],
+      "title": "Token-weighted prefix-cache hit rate over time", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 5}, "id": 6,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi"}},
+      "targets": [{"format": 1, "queryType": "sql", "refId": "A", "rawSql": "SELECT toStartOfFiveMinutes(toDateTime(intDiv(event_time_ms,1000))) AS time, quantileIf(0.95)(ttft_ms, prefix_cache_hit = 1) AS hit_ttft_p95, quantileIf(0.95)(ttft_ms, prefix_cache_hit = 0) AS miss_ttft_p95 FROM pipeline.pipeline_events WHERE event_type = 'llm.completed' AND status = 'ok' AND cached_prompt_tokens IS NOT NULL AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) GROUP BY time ORDER BY time"}],
+      "title": "TTFT p95: prefix hits vs misses", "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["llm", "vllm", "cache"],
+  "templating": {"list": [
+    {"current": {"text": "ClickHouse", "value": "clickhouse"}, "hide": 2, "includeAll": false, "name": "clickhouse", "options": [], "query": "grafana-clickhouse-datasource", "refresh": 1, "type": "datasource"},
+    {"current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"}, "includeAll": true, "multi": true, "name": "model", "options": [], "query": "SELECT DISTINCT model FROM pipeline.pipeline_events WHERE model != '' ORDER BY model", "refresh": 2, "type": "query"},
+    {"current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"}, "includeAll": true, "multi": true, "name": "engine", "options": [], "query": "SELECT DISTINCT engine FROM pipeline.pipeline_events WHERE engine != '' ORDER BY engine", "refresh": 2, "type": "query"},
+    {"current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"}, "includeAll": true, "multi": true, "name": "device", "options": [], "query": "SELECT DISTINCT device FROM pipeline.pipeline_events WHERE device != '' ORDER BY device", "refresh": 2, "type": "query"}
+  ]},
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "title": "LLM Prefix Cache Performance",
+  "uid": "llm-prefix-cache-performance",
+  "version": 3
+}

@@ -1,0 +1,218 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {"asDropdown": false, "icon": "external link", "tags": [], "title": "Session Detail", "type": "link", "url": "/d/inference-session-detail"},
+    {"asDropdown": false, "icon": "external link", "tags": [], "title": "Model Performance", "type": "link", "url": "/d/inference-model-performance"}
+  ],
+  "description": "Voice-agent KPIs judged the way a caller experiences them: how fast the agent answers, how often it answers, and only then how the workers are holding up.",
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 100,
+      "title": "Experience — what the caller actually feels",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "THE voice-agent number. Median time from the caller finishing their turn (VAD endpoint) to the first PCM of the agent's reply being queued. Under ~600 ms feels instant; over ~1.2 s feels like a bad phone line.",
+      "fieldConfig": {"defaults": {"unit": "ms", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 600}, {"color": "red", "value": 1200}]}}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 0, "y": 1},
+      "id": 1,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT quantile(0.50)(time_to_first_audio_ms) AS value FROM pipeline.pipeline_events WHERE event_type='tts.first_audio_queued' AND status='ok' AND time_to_first_audio_ms > 0 AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})", "refId": "A"}],
+      "title": "Turn response latency p50", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Tail of the response latency. The p95 is what your least-lucky callers live through; keep it under ~1.5 s or the agent feels unreliable even when the median looks fine.",
+      "fieldConfig": {"defaults": {"unit": "ms", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1000}, {"color": "red", "value": 1500}]}}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 4, "y": 1},
+      "id": 2,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT quantile(0.95)(time_to_first_audio_ms) AS value FROM pipeline.pipeline_events WHERE event_type='tts.first_audio_queued' AND status='ok' AND time_to_first_audio_ms > 0 AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring})", "refId": "A"}],
+      "title": "Turn response latency p95", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Of the turns the agent understood (a final transcript was produced), the fraction where it actually started speaking a reply. Below 1.0 means turns are silently dropping in LLM or TTS. Not filtered by model/engine so failed turns (which carry no model tag) still count.",
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 0.95}, {"color": "green", "value": 0.99}]}}, "overrides": []},
+      "gridPos": {"h": 5, "w": 3, "x": 8, "y": 1},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT countIf(event_type='tts.first_audio_queued' AND status='ok') / nullIf(countIf(event_type='stt.completed' AND status='ok'),0) AS value FROM pipeline.pipeline_events WHERE event_type IN ('tts.first_audio_queued','stt.completed') AND event_time_ms BETWEEN $__from AND $__to", "refId": "A"}],
+      "title": "Agent answer rate", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Barge-ins (caller starts talking again) per completed turn. Each one now cancels the in-flight LLM+TTS reply and cuts playback (interrupt controller), so a high value means callers keep interrupting — usually replies that are too slow or too long.",
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 2}, "overrides": []},
+      "gridPos": {"h": 5, "w": 3, "x": 11, "y": 1},
+      "id": 4,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT countIf(event_type='turn.interrupted') / nullIf(countIf(event_type='vad.completed'),0) AS value FROM pipeline.pipeline_events WHERE event_type IN ('turn.interrupted','vad.completed') AND event_time_ms BETWEEN $__from AND $__to", "refId": "A"}],
+      "title": "Barge-ins per turn", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Completed caller turns (VAD endpoints) in the window — the volume everything else is measured against.",
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 3, "x": 14, "y": 1},
+      "id": 5,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT countIf(event_type='vad.completed') AS value FROM pipeline.pipeline_events WHERE event_type='vad.completed' AND event_time_ms BETWEEN $__from AND $__to", "refId": "A"}],
+      "title": "Turns handled", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Share of answered turns that actually carry a time-to-first-audio measurement. The latency percentiles describe only these turns, so a dip here means the headline numbers speak for a shrinking sample — read them with that in mind rather than as a fleet-wide improvement.",
+      "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 90}, {"color": "green", "value": 99}]}}, "overrides": []},
+      "gridPos": {"h": 5, "w": 3, "x": 17, "y": 1},
+      "id": 15,
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT round(countIf(time_to_first_audio_ms IS NOT NULL) / nullIf(count(),0) * 100, 1) AS value FROM pipeline.pipeline_events WHERE event_type='tts.first_audio_queued' AND event_time_ms BETWEEN $__from AND $__to", "refId": "A"}],
+      "title": "TTFA coverage", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Fraction of stage completions (STT/LLM/TTS) that failed. This is a rate, not a raw count, and includes error rows that carry no model tag. Break it down in 'Errors by stage' below.",
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.01}, {"color": "red", "value": 0.05}]}}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 20, "y": 1},
+      "id": 6,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT countIf(status='error') / nullIf(count(),0) AS value FROM pipeline.pipeline_events WHERE event_type IN ('stt.completed','llm.completed','tts.completed') AND event_time_ms BETWEEN $__from AND $__to", "refId": "A"}],
+      "title": "Stage error rate", "type": "stat"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "The headline KPI over time. p50 is the typical caller; p95 is the tail. Watch for the two lines diverging — that means variance, usually queueing under load.",
+      "fieldConfig": {"defaults": {"unit": "ms", "custom": {"drawStyle": "line", "fillOpacity": 8}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "id": 7,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT toStartOfMinute(toDateTime(intDiv(event_time_ms,1000))) AS time, quantile(0.50)(time_to_first_audio_ms) AS response_p50_ms, quantile(0.95)(time_to_first_audio_ms) AS response_p95_ms FROM pipeline.pipeline_events WHERE event_type='tts.first_audio_queued' AND status='ok' AND time_to_first_audio_ms > 0 AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) GROUP BY time ORDER BY time", "refId": "A"}],
+      "title": "Turn response latency (caller endpoint → agent speaking)", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Where the response time goes, so you know which stage to optimize. Each segment is a real interval between two stage timestamps OF THE SAME TURN; a turn contributes to every segment or to none, and lands in exactly one bucket (the minute its endpoint arrived). Means, not medians: the mean is additive, so the stack sums to the mean time-to-first-audio, whereas the stack of per-stage medians this panel used to show summed to a number no real turn ever experienced \u2014 use the p50/p95 panel to the left for the tail. 'matched_turns' (dashed, right axis) is the cohort size: turns lacking a caller endpoint are excluded because the waterfall starts there, so read the segments against it. 'stt_to_llm_dispatch_ms' is the gap between STT finalizing and the LLM being dispatched \u2014 it covers turn-queue wait, admission wait and prompt building together; none of the three is separately measured, so treat it as an interval, not an attribution. Not filtered by model/engine/device: one turn spans three different models, so a single-model filter cannot describe it.",
+      "fieldConfig": {"defaults": {"unit": "ms", "custom": {"drawStyle": "line", "fillOpacity": 25, "stacking": {"mode": "normal", "group": "A"}}}, "overrides": [{"matcher": {"id": "byName", "options": "matched_turns"}, "properties": [{"id": "unit", "value": "short"}, {"id": "custom.stacking", "value": {"mode": "none"}}, {"id": "custom.axisPlacement", "value": "right"}, {"id": "custom.fillOpacity", "value": 0}, {"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [6, 6]}}]}]},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "id": 8,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT toStartOfMinute(toDateTime(intDiv(endpoint_ms,1000))) AS time, round(avg(stt_ms-endpoint_ms)) AS stt_finalize_ms, round(avg(llm_ms-stt_ms)) AS stt_to_llm_dispatch_ms, round(avg(tts_ms-llm_ms)) AS llm_to_first_clause_ms, round(avg(pcm_ms-tts_ms)) AS first_clause_synth_ms, count() AS matched_turns FROM (SELECT session_id, turn_id, maxIf(event_time_ms, event_type='vad.completed') AS endpoint_ms, maxIf(event_time_ms, event_type='stt.completed') AS stt_ms, maxIf(event_time_ms, event_type='llm.started') AS llm_ms, maxIf(event_time_ms, event_type='tts.started') AS tts_ms, maxIf(event_time_ms, event_type='tts.first_audio_queued') AS pcm_ms FROM pipeline.pipeline_events WHERE turn_id>0 AND event_time_ms BETWEEN $__from AND $__to GROUP BY session_id, turn_id HAVING endpoint_ms>0 AND stt_ms>=endpoint_ms AND llm_ms>=stt_ms AND tts_ms>=llm_ms AND pcm_ms>=tts_ms) GROUP BY time ORDER BY time", "refId": "A"}],
+      "title": "Latency budget — where the turn goes (mean per stage, sums to TTFA)", "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+      "id": 101,
+      "title": "Reliability — where turns die",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "The conversational funnel over time: turns understood (STT final transcript) vs answered (agent spoke), with LLM and TTS failures. A gap between understood and answered is dropped turns.",
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 8}}, "overrides": [{"matcher": {"id": "byRegexp", "options": ".*error.*"}, "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]}]},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 15},
+      "id": 9,
+      "options": {"legend": {"calcs": ["sum"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT toStartOfMinute(toDateTime(intDiv(event_time_ms,1000))) AS time, countIf(event_type='stt.completed' AND status='ok') AS understood, countIf(event_type='tts.first_audio_queued' AND status='ok') AS answered, countIf(event_type='llm.completed' AND status='error') AS llm_errors, countIf(event_type='tts.completed' AND status='error') AS tts_errors FROM pipeline.pipeline_events WHERE event_type IN ('stt.completed','tts.first_audio_queued','llm.completed','tts.completed') AND event_time_ms BETWEEN $__from AND $__to GROUP BY time ORDER BY time", "refId": "A"}],
+      "title": "Turn funnel — understood vs answered", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Every failure in the window, grouped by stage and error class/code. This replaces the single combined success number — it tells you exactly what is breaking.",
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 15},
+      "id": 10,
+      "options": {"cellHeight": "sm", "showHeader": true, "sortBy": [{"desc": true, "displayName": "errors"}]},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT event_type AS stage, coalesce(error_class,'') AS error_class, coalesce(error_code,'') AS error_code, count() AS errors FROM pipeline.pipeline_events WHERE status='error' AND event_time_ms BETWEEN $__from AND $__to GROUP BY stage, error_class, error_code ORDER BY errors DESC LIMIT 50", "refId": "A"}],
+      "title": "Errors by stage and class", "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 23},
+      "id": 102,
+      "title": "Capacity & worker health (secondary — is the hardware keeping up?)",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "LLM responsiveness that gates the turn: time-to-first-token (not total reply time) and the admission queue wait. Rising queue_ms means the LLM is saturated.",
+      "fieldConfig": {"defaults": {"unit": "ms", "custom": {"drawStyle": "line", "fillOpacity": 8}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 24},
+      "id": 11,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT toStartOfMinute(toDateTime(intDiv(event_time_ms,1000))) AS time, quantile(0.50)(ttft_ms) AS ttft_p50_ms, quantile(0.95)(ttft_ms) AS ttft_p95_ms, quantile(0.95)(queue_ms) AS queue_p95_ms FROM pipeline.pipeline_events WHERE event_type='llm.completed' AND status='ok' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) GROUP BY time ORDER BY time", "refId": "A"}],
+      "title": "LLM TTFT & queue (capacity)", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "STT real-time factor on FINAL (turn-complete) segments only — compute seconds per audio second. Below 1.0 means it transcribes faster than real time. This is throughput headroom, not caller-felt latency. Mid-turn partials are excluded to avoid noise.",
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 8}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 24},
+      "id": 12,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT toStartOfMinute(toDateTime(intDiv(event_time_ms,1000))) AS time, quantile(0.50)(realtime_factor) AS stt_rtf_p50, quantile(0.95)(realtime_factor) AS stt_rtf_p95 FROM pipeline.pipeline_events WHERE event_type='stt.segment_profile' AND turn_complete=1 AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) GROUP BY time ORDER BY time", "refId": "A"}],
+      "title": "STT real-time factor — final segments (capacity)", "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "TTS real-time factor per reply — synth seconds per audio second. Below 1.0 means it renders faster than playback (streaming keeps up). This is throughput, not the first-audio latency shown above.",
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 8}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 24},
+      "id": 13,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT toStartOfMinute(toDateTime(intDiv(event_time_ms,1000))) AS time, quantile(0.50)(realtime_factor) AS tts_rtf_p50, quantile(0.95)(realtime_factor) AS tts_rtf_p95 FROM pipeline.pipeline_events WHERE event_type='tts.completed' AND status='ok' AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) GROUP BY time ORDER BY time", "refId": "A"}],
+      "title": "TTS real-time factor (capacity)", "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 32},
+      "id": 103,
+      "title": "Fleet & drill-down",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "Response latency per deployed configuration, so you can compare a version/model/engine/device against the fleet. turns = replies actually spoken. Sort by p95 to find the worst config.",
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 33},
+      "id": 14,
+      "options": {"cellHeight": "sm", "showHeader": true, "sortBy": [{"desc": true, "displayName": "response_p95_ms"}]},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT pipeline_version, model, engine, device, count() AS turns, round(quantile(0.50)(time_to_first_audio_ms),0) AS response_p50_ms, round(quantile(0.95)(time_to_first_audio_ms),0) AS response_p95_ms, round(quantile(0.95)(compute_ms),0) AS tts_first_synth_p95_ms FROM pipeline.pipeline_events WHERE event_type='tts.first_audio_queued' AND status='ok' AND time_to_first_audio_ms > 0 AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) GROUP BY pipeline_version, model, engine, device ORDER BY response_p95_ms DESC", "refId": "A"}],
+      "title": "Response latency by version / model / engine / device", "type": "table"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"},
+      "description": "The slowest individual turns — the ones that made a caller wait. Copy a session_id into Session Detail to see the full STT→LLM→TTS trace for that turn.",
+      "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": [{"matcher": {"id": "byName", "options": "response_ms"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-background"}}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1000}, {"color": "red", "value": 1500}]}}]}]},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 42},
+      "id": 15,
+      "options": {"cellHeight": "sm", "showHeader": true, "sortBy": [{"desc": true, "displayName": "response_ms"}]},
+      "targets": [{"format": 1, "queryType": "sql", "rawSql": "SELECT session_id, turn_id, toDateTime(intDiv(event_time_ms,1000)) AS at, round(time_to_first_audio_ms) AS response_ms, model, engine, device FROM pipeline.pipeline_events WHERE event_type='tts.first_audio_queued' AND status='ok' AND time_to_first_audio_ms IS NOT NULL AND event_time_ms BETWEEN $__from AND $__to AND model IN (${model:sqlstring}) AND engine IN (${engine:sqlstring}) AND device IN (${device:sqlstring}) ORDER BY response_ms DESC LIMIT 50", "refId": "A"}],
+      "title": "Slowest turns — drill into Session Detail", "type": "table"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 41,
+  "tags": ["NEW","inference", "voice", "kpi"],
+  "templating": {
+    "list": [
+      {"current": {}, "hide": 0, "includeAll": false, "label": "ClickHouse", "name": "clickhouse", "options": [], "query": "grafana-clickhouse-datasource", "refresh": 1, "type": "datasource"},
+      {"current": {"selected": true, "text": "All", "value": "$__all"}, "hide": 0, "includeAll": true, "label": "Model", "multi": true, "name": "model", "options": [], "query": "SELECT DISTINCT model FROM pipeline.pipeline_events WHERE model != '' ORDER BY model", "refresh": 2, "type": "query", "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"}},
+      {"current": {"selected": true, "text": "All", "value": "$__all"}, "hide": 0, "includeAll": true, "label": "Engine", "multi": true, "name": "engine", "options": [], "query": "SELECT DISTINCT engine FROM pipeline.pipeline_events WHERE engine != '' ORDER BY engine", "refresh": 2, "type": "query", "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"}},
+      {"current": {"selected": true, "text": "All", "value": "$__all"}, "hide": 0, "includeAll": true, "label": "Device", "multi": true, "name": "device", "options": [], "query": "SELECT DISTINCT device FROM pipeline.pipeline_events WHERE device != '' ORDER BY device", "refresh": 2, "type": "query", "datasource": {"type": "grafana-clickhouse-datasource", "uid": "${clickhouse}"}}
+    ]
+  },
+  "time": {"from": "now-24h", "to": "now"},
+  "timezone": "browser",
+  "title": "Voice Agent KPIs",
+  "uid": "inference-pipeline-kpis",
+  "version": 4,
+  "weekStart": ""
+}

@@ -1,0 +1,4 @@
+# Direct WebRTC WAV replay client. No browser, Chromium, database client, or
+# ClickHouse dependency is used by this harness.
+aiortc>=1.9,<2
+websockets>=13,<16

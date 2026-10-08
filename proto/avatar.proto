@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+// Edge <-> Avatar contract. One bidi stream per voice session: the Go media
+// edge sends the session's two audio timelines (what the agent is about to say
+// and what the user is saying) as paired 16 kHz frames; the avatar service
+// renders a talking-head video from them and streams encoded H.264 back, which
+// the edge packetizes onto a WebRTC video track.
+//
+// The avatar service is deliberately a peer of the edge, not of the
+// orchestrator: the edge already holds both audio streams, owns the playout
+// clock they must be synchronised against, and owns the peer connection the
+// video has to leave on.
+//
+// This seam is model-agnostic on purpose, same spirit as asr.proto — the
+// service behind it is AVTR-1 today (see avatar/README.md).
+package avatar.v1;
+
+option go_package = "mondee/media-edge/internal/avatarpb";
+
+service Avatar {
+  rpc Stream(stream ClientEvent) returns (stream ServerEvent);
+}
+
+// First message on every stream. Empty ids select the service's configured
+// defaults, so a caller never needs to know which portraits are installed.
+message SessionOpen {
+  string session_id    = 1;
+  string avatar_id     = 2;
+  string background_id = 3;
+}
+
+// One slice of the session timeline. Both tracks are PCM16 little-endian,
+// 16 kHz mono, and must be the same length. The edge sends these continuously
+// (silence included) because the avatar keeps moving while nobody is talking.
+message AudioFrame {
+  bytes speech_pcm16 = 1;  // agent audio scheduled for this slice; drives lip-sync
+  bytes listen_pcm16 = 2;  // user microphone audio; drives listening motion
+  // Position of this slice's first sample on the session timeline, in 16 kHz
+  // samples. Video frames come back stamped on the same timeline, which is
+  // what lets the edge release audio and video against one clock.
+  int64 pts_samples  = 3;
+}
+
+message Control {
+  enum Type {
+    UNSPECIFIED   = 0;
+    // Barge-in: the agent audio already sent but not yet rendered will never be
+    // heard. Silence it so the avatar's mouth stops with the sound.
+    FLUSH_SPEECH  = 1;
+    // The browser lost a reference frame (RTCP PLI/FIR): make the next encoded
+    // frame a keyframe.
+    KEYFRAME      = 2;
+    SESSION_CLOSE = 3;
+  }
+  Type type = 1;
+}
+
+message ClientEvent {
+  oneof msg {
+    SessionOpen open    = 1;
+    AudioFrame  audio   = 2;
+    Control     control = 3;
+  }
+}
+
+// Sent once, after SessionOpen is accepted and before any video.
+message SessionReady {
+  string session_id = 1;
+  string codec      = 2;  // "h264" (Annex-B byte stream)
+  int32  width      = 3;
+  int32  height     = 4;
+  int32  fps        = 5;
+  // Audio the model must see past a frame's own position before it can render
+  // it, plus one chunk of batching. The edge delays agent audio by at least
+  // this much (plus render time) or the mouth trails the voice.
+  int32  lookahead_ms = 6;
+  string avatar_id     = 7;
+  string background_id = 8;
+  string encoder       = 9;  // e.g. "h264_nvenc" / "libx264", for operators
+}
+
+// One encoded picture: a complete H.264 access unit with start codes. SPS/PPS
+// are repeated in-band on every keyframe.
+message VideoFrame {
+  bytes data        = 1;
+  int64 pts_samples = 2;  // timeline position of the audio this frame depicts
+  bool  keyframe    = 3;
+  // Wall time from the start of this frame's chunk to this frame being encoded,
+  // in ms; the last frame of a chunk carries the chunk total.
+  // Real time needs this under the chunk duration (200 ms for AVTR-1).
+  double chunk_render_ms = 4;
+}
+
+message ServerEvent {
+  oneof msg {
+    SessionReady ready = 1;
+    VideoFrame   video = 2;
+  }
+}

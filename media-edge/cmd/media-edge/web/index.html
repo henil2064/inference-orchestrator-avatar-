@@ -1,0 +1,623 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Echo — voice assistant</title>
+<style>
+  :root {
+    color-scheme: light;
+    --ink: #18222d;
+    --muted: #7b8794;
+    --line: #e8edf2;
+    --surface: #ffffff;
+    --soft: #f5f8fb;
+    --accent: #3f7cff;
+    --accent-dark: #2d62d3;
+    --shadow: 0 24px 70px rgba(37, 56, 82, .12);
+    --topbar-height: 59px;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    height: 100svh;
+    min-height: 0;
+    margin: 0;
+    padding: 20px 16px 24px;
+    overflow: hidden;
+    color: var(--ink);
+    background: linear-gradient(135deg, #f5f8fb 0%, #eef2f7 100%);
+    font: 15px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .app-shell { width: min(100%, 1120px); height: 100%; margin: 0 auto; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; letter-spacing: -.01em; font-size: 18px; }
+  .brand-mark {
+    display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px;
+    color: #fff; background: linear-gradient(145deg, #6a9dff, #3d6ce5); box-shadow: 0 6px 20px rgba(63, 124, 255, .3), inset 0 1px 0 rgba(255, 255, 255, .25);
+  }
+  .brand-mark svg { width: 20px; height: 20px; }
+  .topbar-note { color: var(--muted); font-size: 13px; font-weight: 500; }
+  .workspace { display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 31vw, 360px); height: calc(100% - var(--topbar-height)); min-height: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: 28px; box-shadow: 0 20px 60px rgba(37, 56, 82, .15); }
+  .conversation { display: flex; flex-direction: column; min-height: 0; padding: 32px 38px 28px; }
+  .eyebrow { margin: 0 0 8px; color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+  h1 { margin: 0; font-size: clamp(28px, 5vw, 42px); line-height: 1.15; letter-spacing: -.045em; font-weight: 800; }
+  .subheading { max-width: 480px; margin: 12px 0 0; color: var(--muted); font-size: 15px; line-height: 1.6; }
+  .avatar { flex: none; width: 100%; max-width: 420px; aspect-ratio: 16 / 9; margin-top: 20px; object-fit: cover; background: #0f1720; border-radius: 16px; }
+  .avatar[hidden] { display: none; }
+  #replies { flex: 1; min-height: 0; margin-top: 28px; overflow-y: auto; overscroll-behavior: contain; padding-right: 8px; scrollbar-width: thin; scrollbar-color: #c7d2dd transparent; }
+  #replies:empty::before { content: "Your conversation will appear here"; display: block; padding-top: 48px; color: #a8b5c1; text-align: center; font-size: 14px; }
+  #replies strong { display: none; }
+  .reply { position: relative; max-width: 85%; margin: 16px 0 0; padding: 13px 16px 13px 16px; color: #2d3e4f; white-space: pre-wrap; background: linear-gradient(135deg, #f8fafb 0%, #f5f8fb 100%); border: 1px solid #e6ecf1; border-radius: 4px 16px 16px 16px; box-shadow: 0 2px 6px rgba(45, 62, 79, .05); line-height: 1.6; }
+  .reply::before { content: "Echo"; display: block; margin-bottom: 6px; color: var(--accent); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .composer { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+  .session-copy { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; font-weight: 500; }
+  #status { color: var(--ink); font-weight: 600; font-size: 14px; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #d1d8df; }
+  body.is-live .status-dot { background: #22c55e; box-shadow: 0 0 0 6px rgba(34, 197, 94, .15); animation: pulse-dot .8s ease-in-out infinite; }
+  @keyframes pulse-dot { 0%, 100% { box-shadow: 0 0 0 6px rgba(34, 197, 94, .15); } 50% { box-shadow: 0 0 0 10px rgba(34, 197, 94, .1); } }
+  .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+  button { border: 0; border-radius: 14px; cursor: pointer; font: inherit; font-weight: 600; transition: all .2s cubic-bezier(0.4, 0, 0.2, 1); }
+  button:focus-visible { outline: 2px solid rgba(63, 124, 255, .5); outline-offset: 2px; }
+  button:disabled { cursor: not-allowed; opacity: .55; }
+  button:not(:disabled):active { transform: scale(0.98); }
+  #start, #fileStart { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-width: 160px; min-height: 46px; padding: 12px 20px; color: #fff; background: var(--accent); box-shadow: 0 4px 14px rgba(63, 124, 255, .3), inset 0 1px 0 rgba(255, 255, 255, .2); font-size: 15px; white-space: nowrap; }
+  #start:not(:disabled):hover, #fileStart:not(:disabled):hover { background: var(--accent-dark); box-shadow: 0 6px 20px rgba(63, 124, 255, .4), inset 0 1px 0 rgba(255, 255, 255, .2); transform: translateY(-2px); }
+  #stop { min-height: 46px; padding: 12px 20px; color: #c84c57; background: #fff5f6; font-size: 15px; white-space: nowrap; }
+  #stop:not(:disabled):hover { background: #ffe8eb; }
+  .mic-icon { display: inline-block; width: 10px; height: 16px; border: 2px solid currentColor; border-radius: 8px; position: relative; }
+  .mic-icon::before { content: ""; position: absolute; left: -5px; bottom: -8px; width: 16px; height: 9px; border: 2px solid currentColor; border-top: 0; border-radius: 0 0 10px 10px; }
+  .mic-icon::after { content: ""; position: absolute; left: 3px; bottom: -12px; width: 2px; height: 4px; background: currentColor; }
+  .agent-panel { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 28px; color: #fff; text-align: center; background: linear-gradient(165deg, #1a2434 0%, #2a3d52 50%, #1e2d3e 100%); position: relative; overflow: hidden; }
+  .agent-panel::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 50% 0%, rgba(100, 170, 255, .1) 0%, transparent 70%); pointer-events: none; }
+  .agent-panel h2 { margin: 26px 0 6px; font-size: 21px; letter-spacing: -.02em; font-weight: 700; position: relative; z-index: 1; }
+  .agent-panel p { max-width: 210px; margin: 0; color: #a8bcd1; font-size: 13px; line-height: 1.5; position: relative; z-index: 1; }
+  .orb-wrap { display: grid; place-items: center; width: 210px; height: 210px; position: relative; z-index: 2; }
+  .orb { display: grid; place-items: center; width: 132px; height: 132px; border-radius: 50%; background: radial-gradient(circle at 35% 28%, #b0e5ff 0, #7ca5ff 34%, #5573ff 63%, #4557e0 100%); box-shadow: 0 0 0 18px rgba(120, 168, 255, .06), 0 0 0 38px rgba(120, 168, 255, .03), 0 20px 45px rgba(0, 0, 0, .3); }
+  .orb svg { width: 40px; height: 40px; color: #fff; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .2)); }
+  body.is-live .orb { animation: breathe 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+  body.is-live .orb-wrap::before { content: ""; position: absolute; width: 178px; height: 178px; border: 1.5px solid rgba(160, 204, 255, .3); border-radius: 50%; animation: pulse 2.8s ease-out infinite; }
+  .orb-wrap { position: relative; }
+  .helper { margin-top: auto !important; padding-top: 32px; color: #7a8fa5 !important; font-size: 12px; position: relative; z-index: 1; }
+  .file-option { margin-top: 18px; text-align: center; }
+  .file-option summary { display: inline-block; color: #7b8794; cursor: pointer; font-size: 13px; font-weight: 500; transition: color .2s ease; padding: 4px 8px; }
+  .file-option summary:hover { color: var(--accent); }
+  .file-option[open] summary { color: var(--accent); }
+  .file-option label { display: block; margin: 12px 0 8px; color: var(--muted); font-size: 12px; font-weight: 500; }
+  #file { max-width: 230px; color: var(--muted); font: inherit; font-size: 12px; padding: 6px; border: 1px solid #e6ecf1; border-radius: 8px; }
+  #fileStart { min-width: 0; padding: 10px 16px; font-size: 13px; box-shadow: none; }
+  #mic, #log { display: none; }
+  a.download { display: block; margin-top: 12px; color: var(--accent); font-size: 12px; text-decoration: none; }
+  a.download:hover { text-decoration: underline; }
+  @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+  @keyframes pulse { 0% { transform: scale(.75); opacity: .9; } 100% { transform: scale(1.2); opacity: 0; } }
+  @media (max-width: 900px) {
+    body { padding: 16px 12px 20px; }
+    .workspace { grid-template-columns: minmax(0, 1fr) 290px; border-radius: 24px; }
+    .conversation { padding: 28px 26px 24px; }
+    .composer { align-items: flex-start; flex-direction: column; }
+    .actions { justify-content: flex-start; }
+  }
+  @media (max-width: 760px) {
+    :root { --topbar-height: 52px; }
+    body { padding: 12px; }
+    .app-shell { height: 100%; }
+    .topbar { margin-bottom: 14px; }
+    .brand-mark { width: 34px; height: 34px; border-radius: 10px; }
+    .topbar-note { display: none; }
+    .workspace { display: grid; grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); height: calc(100% - var(--topbar-height)); min-height: 0; border-radius: 20px; }
+    .agent-panel { order: -1; min-height: 0; flex-direction: row; justify-content: flex-start; gap: 14px; padding: 14px 16px; text-align: left; }
+    .agent-panel::before { background: linear-gradient(90deg, rgba(100, 170, 255, .12), transparent); }
+    .orb-wrap { width: 62px; height: 62px; flex: 0 0 62px; }
+    .orb { width: 48px; height: 48px; box-shadow: 0 0 0 10px rgba(120, 168, 255, .06), 0 12px 24px rgba(0, 0, 0, .24); }
+    .orb svg { width: 22px; height: 22px; }
+    body.is-live .orb-wrap::before { width: 58px; height: 58px; }
+    .agent-panel h2 { margin: 0 0 2px; font-size: 15px; }
+    .agent-panel p { max-width: none; font-size: 12px; }
+    .helper { display: none; }
+    .conversation { min-height: 0; padding: 18px 16px 16px; }
+    .eyebrow { margin-bottom: 5px; font-size: 10px; }
+    h1 { font-size: 26px; line-height: 1.12; }
+    .subheading { margin-top: 8px; font-size: 13px; line-height: 1.45; }
+    #replies { min-height: 120px; margin-top: 16px; padding-right: 4px; }
+    #replies:empty::before { padding-top: 28px; }
+    .reply { max-width: 100%; margin-top: 12px; padding: 11px 13px; font-size: 14px; }
+    .composer { align-items: stretch; gap: 12px; margin-top: 14px; padding-top: 14px; }
+    .actions { flex-direction: column; width: 100%; }
+    #start, #stop { width: 100%; }
+    .file-option { margin-top: 12px; }
+    #file { width: 100%; max-width: none; }
+  }
+  @media (max-width: 420px) {
+    .conversation { padding: 16px 14px 14px; }
+    .subheading { display: none; }
+    #replies { margin-top: 14px; }
+    .session-copy { align-items: flex-start; font-size: 12px; }
+    #status { font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v3M8 21h8"/></svg>
+      </span>
+      <span>Echo</span>
+    </div>
+    <span class="topbar-note">A little space to think out loud</span>
+  </header>
+
+  <main class="workspace">
+    <section class="conversation">
+      <p class="eyebrow">Voice companion</p>
+      <h1>What’s on your mind?</h1>
+      <p class="subheading">Talk naturally. I’m here to listen, think with you, and help you find your next step.</p>
+
+      <video id="avatar" class="avatar" autoplay playsinline muted hidden></video>
+
+      <section id="replies" aria-live="polite"></section>
+
+      <div class="composer">
+        <div class="session-copy"><span class="status-dot" aria-hidden="true"></span><span id="status">Ready when you are</span></div>
+        <div class="actions">
+          <button id="start" type="button"><span class="mic-icon" aria-hidden="true"></span>Start talking</button>
+          <button id="stop" type="button" disabled>End conversation</button>
+        </div>
+      </div>
+
+      <details class="file-option">
+        <summary>Prefer to use a recording?</summary>
+        <label for="file">Choose an audio file</label>
+        <input type="file" id="file" accept=".wav,audio/wav,audio/*">
+        <button id="fileStart" type="button">Play recording</button>
+      </details>
+    </section>
+
+    
+  </main>
+  <!-- Kept out of the visual UI for the existing device-selection logic. -->
+  <select id="mic" tabindex="-1" aria-hidden="true"><option value=""></option></select>
+  <div id="log" aria-hidden="true"></div>
+</div>
+
+<script>
+const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+// Sender-side knobs from the 'voice' profile (server holds the authoritative
+// copy; these two are the ones that can only be applied in the browser).
+const MAX_BITRATE_BPS = 24000;
+
+const logEl = document.getElementById('log');
+const statusEl = document.getElementById('status');
+const micSelect = document.getElementById('mic');
+const startBtn = document.getElementById('start');
+const stopBtn = document.getElementById('stop');
+const fileInput = document.getElementById('file');
+const fileBtn = document.getElementById('fileStart');
+const repliesEl = document.getElementById('replies');
+
+const log = (...args) => {
+  logEl.textContent += args.join(' ') + '\n';
+  logEl.scrollTop = logEl.scrollHeight;
+};
+const setStatus = (text) => {
+  const lower = String(text).toLowerCase();
+  let label = text;
+  if (lower === 'connecting...') label = 'Getting ready…';
+  else if (lower === 'streaming') label = 'Listening…';
+  else if (lower === 'agent thinking…') label = 'Thinking…';
+  else if (lower === 'agent replied') label = 'Speaking…';
+  else if (lower === 'finalizing…' || lower.includes('waiting for final agent reply')) label = 'Finishing up…';
+  else if (lower === 'your turn') label = 'Your turn';
+  else if (lower.includes('interrupted')) label = 'Your turn';
+  else if (lower === 'done' || lower === 'stopped by user' || lower.startsWith('stopped ')) label = 'Conversation ended';
+  else if (lower.startsWith('server saved')) label = 'Finishing up…';
+  else if (lower.includes('choose a')) label = 'Choose a recording first';
+  else if (lower.includes('error') || lower.includes('failed') || lower.includes('disconnected')) label = 'Something went wrong. Please try again.';
+  statusEl.textContent = label;
+  document.body.classList.toggle('is-live', !['Ready when you are', 'Conversation ended', 'Conversation complete', 'Something went wrong. Please try again.'].includes(label));
+};
+// Turn id of the agent turn currently in flight, 0 when the agent owes us
+// nothing. Set by agent_turn_started, cleared by utterance_end.
+let agentTurn = 0;
+
+function showAgentReply(text) {
+  const reply = document.createElement('div');
+  reply.className = 'reply';
+  reply.textContent = text;
+  repliesEl.appendChild(reply);
+  repliesEl.scrollTop = repliesEl.scrollHeight;
+  log('agent reply:', text);
+}
+
+// Agent audio plays through a real WebRTC remote track (see pc.ontrack). This
+// detached, autoplaying element is its sink; jitter buffering and pacing now
+// live at the edge, not here.
+const agentAudioEl = new Audio();
+agentAudioEl.autoplay = true;
+
+// Optional avatar video. It arrives as a second track in the same media stream
+// as the agent audio, which is what makes the browser lip-sync the two; the
+// element itself stays muted because agentAudioEl already plays the sound.
+const avatarEl = document.getElementById('avatar');
+avatarEl.onloadeddata = () => { avatarEl.hidden = false; };
+
+// Whether this edge has an avatar service behind it. Asked rather than assumed
+// so an audio-only edge keeps getting the audio-only offer it always got.
+async function avatarAvailable() {
+  try {
+    const res = await fetch('/config.json', { cache: 'no-store' });
+    return res.ok && (await res.json()).avatar === true;
+  } catch {
+    return false;
+  }
+}
+
+let pc, ws, stream, recorder, chunks, saved, stopReason, audioSender, wakeLock, agentEvents, currentSessionId;
+let ending, waitingAck, finishTimer, fileCtx;
+
+// ---- mic list ------------------------------------------------------------
+
+async function listMics() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter(d => d.kind === 'audioinput');
+    micSelect.innerHTML = '';
+    if (mics.length === 0) {
+      micSelect.innerHTML = '<option value="">(default)</option>';
+      return;
+    }
+    for (const m of mics) {
+      const opt = document.createElement('option');
+      opt.value = m.deviceId;
+      opt.textContent = m.label || `mic ${micSelect.length + 1}`;
+      micSelect.appendChild(opt);
+    }
+  } catch (err) {
+    log('could not list mics:', err.message);
+  }
+}
+listMics();
+navigator.mediaDevices?.addEventListener?.('devicechange', listMics);
+
+// ---- local guaranteed save ------------------------------------------------
+// Independent of the WebRTC leg entirely, so Stop (or any connection error)
+// always produces a file even if the server round-trip misbehaves.
+
+function pickRecorderMimeType() {
+  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+  return candidates.find(t => window.MediaRecorder?.isTypeSupported?.(t)) || '';
+}
+
+function saveRecording(reason) {
+  if (saved) return;
+  saved = true;
+  if (!chunks || chunks.length === 0) {
+    log('nothing recorded locally (' + reason + ')');
+    return;
+  }
+  const blob = new Blob(chunks, { type: recorder?.mimeType || 'audio/webm' });
+  const url = URL.createObjectURL(blob);
+  const ext = (recorder?.mimeType || '').includes('ogg') ? 'ogg' : 'webm';
+  const filename = `mic-recording-${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`;
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.className = 'download';
+  a.textContent = 'Download your voice note';
+  document.querySelector('.conversation').appendChild(a);
+  a.click();
+  log('saved locally:', filename, '-', reason);
+}
+
+// ---- sender tuning & wake lock (the 'voice' profile's browser-side knobs) --
+
+// networkPriority 'high' makes the browser DSCP-mark the outgoing RTP, which
+// most APs map to the Wi-Fi voice queue (WMM) — usually the single biggest cut
+// to Wi-Fi jitter available to a page. maxBitrate caps the Opus encoder to the
+// profile's 24 kbps directly, which browsers honor more reliably than SDP b=AS.
+async function tuneSender(sender) {
+  if (!sender?.getParameters) return;
+  try {
+    const params = sender.getParameters();
+    if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+    for (const enc of params.encodings) {
+      enc.networkPriority = 'high';
+      enc.priority = 'high';
+      enc.maxBitrate = MAX_BITRATE_BPS;
+    }
+    await sender.setParameters(params);
+  } catch (err) {
+    console.warn('setParameters failed', err);
+  }
+}
+
+// A phone that dims its screen also parks its Wi-Fi radio, arriving as periodic
+// jitter spikes big enough to swamp every other tuning decision. Holding a
+// screen wake lock avoids it; not available everywhere, so failure is ignored.
+async function requestWakeLock() {
+  try {
+    wakeLock = await navigator.wakeLock?.request('screen');
+  } catch (err) {
+    console.warn('wake lock unavailable', err);
+  }
+}
+function releaseWakeLock() {
+  wakeLock?.release?.().catch(() => {});
+  wakeLock = undefined;
+}
+document.addEventListener('visibilitychange', () => {
+  // Wake locks are auto-released when the page is hidden; re-acquire on return
+  // so a phone that briefly slept keeps its radio awake while still streaming.
+  if (document.visibilityState === 'visible' && !stopBtn.disabled) requestWakeLock();
+});
+
+// ---- signaling (WebSocket, trickle ICE) -----------------------------------
+
+function connectSignaling() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const socket = new WebSocket(`${proto}://${location.host}/ws`);
+  socket.onopen = () => makeOffer();
+  socket.onmessage = (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch { return; }
+    handleSignal(msg);
+  };
+  socket.onerror = () => log('signaling socket error');
+  socket.onclose = () => log('signaling socket closed');
+  return socket;
+}
+
+async function handleSignal(msg) {
+  switch (msg.type) {
+    case 'answer':
+      await pc.setRemoteDescription(msg.answer);
+      break;
+    case 'ice':
+      if (msg.candidate) {
+        try { await pc.addIceCandidate(msg.candidate); }
+        catch (err) { log('addIceCandidate failed:', err.message); }
+      }
+      break;
+    case 'saved': {
+      const note = msg.error ? ` — cut short: ${msg.error}` : '';
+      log(`server saved: ${msg.file} (${(msg.bytes / 1024).toFixed(1)} KB)${note}`);
+      // Agent output arrives over WebRTC's data channel. Do not close the peer
+      // connection merely because this signaling acknowledgement arrived first.
+      setStatus(waitingAck ? 'waiting for final agent reply…' : 'server saved');
+      break;
+    }
+    case 'error':
+      log('server error:', msg.error);
+      if (waitingAck) endSession('server error: ' + msg.error);
+      else setStatus('server error');
+      break;
+  }
+}
+
+async function makeOffer() {
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  ws.send(JSON.stringify({ type: 'offer', offer: pc.localDescription }));
+}
+
+// ---- start / stop ----------------------------------------------------------
+
+// Final teardown: close everything and re-enable Start. Idempotent.
+function endSession(reason) {
+  if (ending) return;
+  ending = true;
+  clearTimeout(finishTimer);
+  finishTimer = null;
+  stopReason = reason;
+  releaseWakeLock();
+  if (recorder && recorder.state !== 'inactive') recorder.stop(); // onstop -> saveRecording
+  else saveRecording(reason);
+  pc?.close();
+  ws?.close();
+  stream?.getTracks().forEach(t => t.stop());
+  fileCtx?.close().catch(() => {}); // stops the file playback source too
+  agentAudioEl.srcObject = null; // detach the agent audio track
+  avatarEl.srcObject = null;
+  avatarEl.hidden = true;
+  pc = ws = stream = audioSender = fileCtx = agentEvents = currentSessionId = undefined;
+  stopBtn.disabled = true;
+  startBtn.disabled = false;
+  fileBtn.disabled = false;
+  setStatus(reason);
+}
+
+// User-initiated stop: release the mic now, ask the server to finalize, and
+// keep the peer connection open long enough for the final LLM reply to arrive
+// on its WebRTC data channel. endSession does the rest.
+function requestStop() {
+  if (ending || waitingAck) return;
+  releaseWakeLock();
+  stopReason = 'stopped by user';
+  if (recorder && recorder.state !== 'inactive') recorder.stop();
+  else saveRecording(stopReason);
+  stream?.getTracks().forEach(t => t.stop()); // release mic immediately
+  stopBtn.disabled = true;
+  setStatus('finalizing…');
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    waitingAck = true;
+    ws.send(JSON.stringify({ type: 'stop' }));
+    finishTimer = setTimeout(() => endSession('stopped (no final agent response)'), 30000);
+  } else {
+    endSession('stopped by user');
+  }
+}
+
+function prepStart() {
+  startBtn.disabled = true;
+  fileBtn.disabled = true;
+  chunks = [];
+  saved = ending = waitingAck = false;
+  setStatus('connecting...');
+}
+
+// Shared session setup, given a MediaStream (real mic or file-simulated). The edge
+// can't tell the two apart — both arrive as a live Opus track over WebRTC.
+async function startSession(mediaStream) {
+  stream = mediaStream;
+  const mimeType = pickRecorderMimeType();
+  recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+  recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+  recorder.onstop = () => saveRecording(stopReason || 'recorder stopped');
+  recorder.onerror = (e) => {
+    log('recorder error:', e.error?.message || e);
+    endSession('recorder error');
+  };
+  recorder.start(250); // small timeslice so data is already buffered if something crashes mid-stream
+
+  pc = new RTCPeerConnection({ iceServers: ICE_SERVERS, bundlePolicy: 'max-bundle' });
+  // Browser creates the ordered data channel, so its SDP offer negotiates the
+  // same WebRTC connection used for upstream microphone audio. The WebSocket is
+  // only used for SDP/ICE signaling.
+  agentEvents = pc.createDataChannel('agent-events', { ordered: true });
+  agentEvents.onopen = () => log('agent-events data channel open');
+  agentEvents.onclose = () => log('agent-events data channel closed');
+  agentEvents.onerror = () => log('agent-events data channel error');
+  agentEvents.onmessage = (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch { log('bad agent event'); return; }
+    if (msg.type === 'session_open') {
+      currentSessionId = msg.session_id || '';
+      if (currentSessionId) log('session id:', currentSessionId);
+    } else if (msg.type === 'agent_reply') {
+      showAgentReply(msg.text || '');
+      setStatus('agent replied');
+    } else if (msg.type === 'agent_turn_started') {
+      // The turn state machine. agent_turn_started..utterance_end is the
+      // only window in which the client should expect further audio or text for
+      // a turn; outside it there is nothing pending and nothing to wait for.
+      agentTurn = msg.turn_id || 0;
+      setStatus('agent thinking…');
+    } else if (msg.type === 'utterance_end' || msg.type === 'playback_complete') {
+      // Ignore a stale completion from a turn we already moved past — turn ids
+      // are what make that possible.
+      if (agentTurn && msg.turn_id && msg.turn_id !== agentTurn) return;
+      agentTurn = 0;
+      setStatus(msg.reason === 'interrupted' ? 'interrupted — your turn'
+        : msg.reason === 'error' ? 'agent turn failed — your turn'
+        : 'your turn');
+    } else if (msg.type === 'session_complete') {
+      log('agent session complete:', msg.session_id || '');
+      if (waitingAck) endSession('done');
+    }
+  };
+  // Agent audio now arrives as a real WebRTC Opus track (the edge paces and
+  // Opus-encodes TTS onto it). Attach it to an autoplaying audio element; the
+  // start-button click is the user gesture that satisfies autoplay policy.
+  pc.ontrack = (ev) => {
+    if (ev.track.kind === 'video') {
+      avatarEl.srcObject = new MediaStream([ev.track]);
+      avatarEl.play().catch(err => log('avatar video play blocked:', err?.message || err));
+      return;
+    }
+    if (ev.track.kind !== 'audio') return;
+    agentAudioEl.srcObject = ev.streams[0];
+    agentAudioEl.play().catch(err => log('agent audio play blocked:', err?.message || err));
+  };
+  stream.getTracks().forEach(track => { audioSender = pc.addTrack(track, stream); });
+  await tuneSender(audioSender);
+  // Receive-only: the edge sends the avatar, the browser never sends video.
+  if (await avatarAvailable()) pc.addTransceiver('video', { direction: 'recvonly' });
+
+  pc.onicecandidate = (ev) => {
+    if (ev.candidate && ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'ice', candidate: ev.candidate }));
+    }
+  };
+  pc.oniceconnectionstatechange = () => log('ice state:', pc.iceConnectionState);
+  pc.onconnectionstatechange = () => {
+    log('connection state:', pc.connectionState);
+    if (pc.connectionState === 'connected') setStatus('streaming');
+    if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+      endSession('connection ' + pc.connectionState);
+    }
+  };
+
+  ws = connectSignaling();
+  stopBtn.disabled = false;
+}
+
+startBtn.onclick = async () => {
+  prepStart();
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error('Microphone access is unavailable here. Open this page over HTTPS or from localhost.');
+    }
+    const deviceId = micSelect.value;
+    try {
+      const mic = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          deviceId: deviceId ? { exact: deviceId } : undefined,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      const micSettings = mic.getAudioTracks()[0]?.getSettings?.() || {};
+      log('got mic stream; audio processing:', JSON.stringify({
+        echoCancellation: micSettings.echoCancellation,
+        noiseSuppression: micSettings.noiseSuppression,
+        autoGainControl: micSettings.autoGainControl,
+      }));
+      listMics();
+      requestWakeLock();
+      await startSession(mic);
+    } catch (micErr) {
+      if (micErr.name === 'NotAllowedError' || micErr.name === 'PermissionDeniedError') {
+        throw new Error('Microphone permission denied. Please allow microphone access and try again.');
+      } else if (micErr.name === 'NotFoundError' || micErr.name === 'DevicesNotFoundError') {
+        throw new Error('No microphone found. Please connect a microphone and try again.');
+      } else if (micErr.name === 'NotReadableError') {
+        throw new Error('Microphone is in use by another application. Please close it and try again.');
+      } else {
+        throw new Error('Microphone error: ' + (micErr.message || 'Unknown error'));
+      }
+    }
+  } catch (err) {
+    log('error:', err.message);
+    endSession('error: ' + err.message);
+  }
+};
+
+// File path: decode the .wav and play it in REAL TIME into a MediaStream, so the
+// track carries live PCM exactly like a mic would. On playback end we run the
+// normal user-Stop so the edge endpoints the turn and the final transcript flows.
+fileBtn.onclick = async () => {
+  const file = fileInput.files?.[0];
+  if (!file) { setStatus('choose a .wav file first'); return; }
+  prepStart();
+  try {
+    fileCtx = new AudioContext();
+    await fileCtx.resume(); // this click is the user gesture that unlocks audio
+    const buf = await fileCtx.decodeAudioData(await file.arrayBuffer());
+    const dest = fileCtx.createMediaStreamDestination();
+    const src = fileCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(dest);
+    src.onended = () => requestStop(); // end of file == end of "call" (no-op if already stopping)
+    log(`loaded ${file.name}: ${buf.duration.toFixed(1)}s @ ${buf.sampleRate}Hz — streaming in real time`);
+    requestWakeLock();
+    await startSession(dest.stream);
+    src.start();
+  } catch (err) {
+    log('error:', err.message);
+    endSession('error: ' + err.message);
+  }
+};
+
+stopBtn.onclick = () => requestStop();
+
+window.addEventListener('beforeunload', () => {
+  if (stopBtn.disabled) return;
+  saveRecording('page closed'); // can't wait for the async recorder.stop() here
+});
+</script>
+</body>
+</html>

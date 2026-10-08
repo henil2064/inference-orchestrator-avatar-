@@ -1,0 +1,46 @@
+build/
+recordings/
+*.crt
+*.key
+*.exe
+orchestrator/received/
+__pycache__/
+*.dll
+.venv/
+*.so
+*.1
+*.0
+.venv-sravaani/
+.venv-sglang/
+# local env files (keep .env.example tracked)
+.env
+!.env.example
+llm/.env.unsloth
+
+# orchestrator session transcript log (ORCH_TRANSCRIPT_LOG)
+orchestrator_sessions.json
+*.json.tmp
+/llm/models
+/llm-deprecated/models
+.venv-llama
+/adaptive_llm/.venv
+/adaptive_llm/models
+/stt/models
+/adaptive_llm/run
+/.review
+# Phase 3 replica launcher: per-replica logs and generated Prometheus
+# file_sd target lists (regenerated on every scripts/run_pipeline.py launch)
+/run/
+/monitoring/targets/
+# upstream AVTR-1 checkout, its pixi environment, model artifacts and built
+# TensorRT engines (avatar/setup.sh)
+/avatar/third_party/
+# local portraits copied into the artifacts by avatar/setup.sh
+/avatar/portraits/
+# compiled Go binary output
+/media-edge/media-edge
+/.pytest_cache/
+.pytest_cache
+.redis-data
+.hf-cache
+.grafana

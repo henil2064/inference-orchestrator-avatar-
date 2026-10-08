@@ -1,0 +1,10 @@
+# Runtime deps for llm/server_unsloth.py. Keep this in its own venv; it uses
+# llama.cpp GGUF bindings instead of vLLM's CUDA/Torch stack.
+#
+# For NVIDIA acceleration, install llama-cpp-python with CMAKE_ARGS enabled, e.g.:
+#   CMAKE_ARGS="-DGGML_CUDA=on" pip install --force-reinstall --no-cache-dir llama-cpp-python
+llama-cpp-python>=0.3.8
+huggingface-hub>=0.25
+grpcio
+protobuf>=7.35.1
+prometheus-client>=0.20

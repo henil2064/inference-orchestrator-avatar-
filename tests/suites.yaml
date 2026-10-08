@@ -1,0 +1,188 @@
+{
+  "suites": {
+    "adaptive_llm": {
+      "description": "Adaptive LLM fast unit/service tests. Worker modules run in separate processes to avoid duplicate Prometheus collectors.",
+      "tier": "service",
+      "default": true,
+      "cwd": ".",
+      "python": "adaptive_llm/.venv/bin/python",
+      "env": {"PYTHONPATH": "."},
+      "commands": [
+        ["python", "-m", "pytest", "adaptive_llm/tests/test_config.py", "adaptive_llm/tests/test_context_window.py", "adaptive_llm/tests/test_conversation_cache_bench.py", "adaptive_llm/tests/test_env_loading.py", "adaptive_llm/tests/test_facade.py", "adaptive_llm/tests/test_gguf_vllm_compat.py", "adaptive_llm/tests/test_hardware.py", "adaptive_llm/tests/test_model_store.py", "adaptive_llm/tests/test_planner.py", "adaptive_llm/tests/test_prompt_manager.py", "adaptive_llm/tests/test_runtime_manager.py", "adaptive_llm/tests/test_vllm_engine_args.py"],
+        ["python", "-m", "pytest", "adaptive_llm/tests/test_sglang_interrupt.py"],
+        ["python", "-m", "pytest", "adaptive_llm/tests/test_vllm_stream_metrics.py"]
+      ]
+    },
+    "adaptive_llm-llamacpp": {
+      "description": "Adaptive LLM llama.cpp worker tests; requires llama-cpp-python runtime import.",
+      "tier": "model",
+      "default": false,
+      "cwd": ".",
+      "python": "adaptive_llm/.venv/bin/python",
+      "env": {"PYTHONPATH": "."},
+      "commands": [
+        ["python", "-m", "pytest", "adaptive_llm/tests/test_llamacpp_interrupt.py"],
+        ["python", "-m", "pytest", "adaptive_llm/tests/test_llamacpp_prompt_format.py"],
+        ["python", "-m", "pytest", "adaptive_llm/tests/test_llamacpp_stream_metrics.py"]
+      ]
+    },
+    "orchestrator": {
+      "description": "Orchestrator service-contract tests against MediaBridge, SessionStore, metrics, and telemetry with fakes.",
+      "tier": "service",
+      "default": true,
+      "cwd": "orchestrator",
+      "python": ".venv/bin/python",
+      "env": {"PYTHONPATH": "."},
+      "commands": [["python", "-m", "pytest", "tests", "-k", "not replica_channel_round_robins_and_excludes_unhealthy"]]
+    },
+    "orchestrator-replica-live": {
+      "description": "Live gRPC replica fan-out round-robin/health check; opens local sockets.",
+      "tier": "integration",
+      "default": false,
+      "cwd": "orchestrator",
+      "python": ".venv/bin/python",
+      "env": {"PYTHONPATH": "."},
+      "commands": [["python", "-m", "pytest", "tests/test_replica_fanout.py::test_replica_channel_round_robins_and_excludes_unhealthy"]]
+    },
+    "stt": {
+      "description": "STT segmentation and admission tests against AsrServicer with fake models.",
+      "tier": "service",
+      "default": true,
+      "cwd": "stt",
+      "python": ".venv-sravaani/bin/python",
+      "env": {"PYTHONPATH": "."},
+      "commands": [["python", "-m", "pytest", "tests/test_segment.py"]]
+    },
+    "tts": {
+      "description": "TTS backend selection, streaming, admission, and watchdog tests with fake backends.",
+      "tier": "service",
+      "default": true,
+      "cwd": "tts",
+      "python": ".venv/bin/python",
+      "env": {"PYTHONPATH": "."},
+      "commands": [["python", "-m", "pytest", "tests/test_backends.py"]]
+    },
+    "avatar": {
+      "description": "Avatar chunking and servicer tests against the synthetic renderer and a real libx264 encode; runs in the upstream pixi environment that avatar/setup.sh installs; no GPU needed.",
+      "tier": "service",
+      "default": false,
+      "cwd": "avatar",
+      "python": "third_party/avtr-1/.pixi/envs/default/bin/python",
+      "env": {"PYTHONPATH": "."},
+      "commands": [["python", "-m", "pytest", "tests"]]
+    },
+    "media-edge": {
+      "description": "Go unit/service tests for media-edge packages; benchmarks are not run by go test unless explicitly requested.",
+      "tier": "service",
+      "default": true,
+      "cwd": "media-edge",
+      "commands": [["go", "test", "./..."]]
+    },
+    "media-edge-bench": {
+      "description": "Fast media-edge hot-path Go benchmarks; Silero/model benchmarks remain skipped unless their runtime assets are available.",
+      "tier": "bench",
+      "default": false,
+      "cwd": "media-edge",
+      "commands": [["go", "test", "./cmd/media-edge", "-run", "^$", "-bench", "Benchmark(VADEnergyUpdate|PCMPack)$", "-benchmem"]]
+    },
+    "scripts": {
+      "description": "Repo test runner and host orchestration planning self-checks.",
+      "tier": "unit",
+      "default": true,
+      "cwd": ".",
+      "python": "tests/.venv/bin/python",
+      "env": {"PYTHONPATH": "scripts"},
+      "commands": [["python", "-m", "pytest", "tests/test_runner.py", "scripts/orchestration/test_plan.py"]]
+    },
+    "scripts-supervisor": {
+      "description": "Host orchestration supervisor checks; opens local sockets and requires grpc health deps.",
+      "tier": "integration",
+      "default": false,
+      "cwd": ".",
+      "python": "tests/.venv/bin/python",
+      "env": {"PYTHONPATH": "scripts"},
+      "commands": [["python", "-m", "pytest", "scripts/orchestration/test_supervisor.py"]]
+    },
+    "pipeline-helpers": {
+      "description": "Dependency-light helper tests for the WAV/WebRTC harness.",
+      "tier": "unit",
+      "default": true,
+      "cwd": "pipeline_test",
+      "python": ".venv/bin/python",
+      "env": {"PYTHONPATH": "."},
+      "commands": [["python", "-m", "pytest", "test_stream_wav.py"]]
+    },
+    "pipeline": {
+      "description": "End-to-end WAV/WebRTC replay; requires running edge/orchestrator/STT/LLM/TTS stack and representative audio.",
+      "tier": "e2e",
+      "default": false,
+      "cwd": "pipeline_test",
+      "python": ".venv/bin/python",
+      "env": {"PYTHONPATH": "."},
+      "commands": [["python", "stream_wav.py"]]
+    },
+    "pipeline-load-burst": {
+      "description": "Closed-loop concurrent WebRTC load generator; requires the running stack and WAV recordings.",
+      "tier": "e2e",
+      "default": false,
+      "cwd": "pipeline_test",
+      "python": ".venv/bin/python",
+      "env": {"PYTHONPATH": "."},
+      "commands": [["python", "load_burst.py", "--concurrency", "1"]]
+    },
+    "pipeline-open-loop": {
+      "description": "Open-loop scheduled WebRTC load generator; requires the running stack and WAV recordings.",
+      "tier": "e2e",
+      "default": false,
+      "cwd": "pipeline_test",
+      "python": ".venv/bin/python",
+      "env": {"PYTHONPATH": "."},
+      "commands": [["python", "open_loop_load.py", "--rate", "0.2", "--duration-s", "5"]]
+    },
+    "adaptive_llm-vllm-bench": {
+      "description": "Adaptive LLM vLLM model/load benchmark; starts model-backed workers and writes tuning results.",
+      "tier": "bench",
+      "default": false,
+      "cwd": ".",
+      "python": "adaptive_llm/.venv/bin/python",
+      "env": {"PYTHONPATH": "."},
+      "commands": [["python", "adaptive_llm/tools/vllm_tune.py"]]
+    },
+    "adaptive_llm-cache-bench": {
+      "description": "Adaptive LLM multi-turn prefix-cache benchmark; starts model-backed workers and writes cache tuning results.",
+      "tier": "bench",
+      "default": false,
+      "cwd": ".",
+      "python": "adaptive_llm/.venv/bin/python",
+      "env": {"PYTHONPATH": "."},
+      "commands": [["python", "adaptive_llm/tools/vllm_cache_tune.py"]]
+    },
+    "stt-tune": {
+      "description": "STT tuning benchmark over candidate runtime settings; requires STT venv, benchmark audio, and service dependencies.",
+      "tier": "bench",
+      "default": false,
+      "cwd": ".",
+      "python": "stt/.venv-sravaani/bin/python",
+      "env": {"PYTHONPATH": "."},
+      "commands": [["python", "scripts/tune_stt.py"]]
+    },
+    "tts-tune": {
+      "description": "Indic-Mio TTS tuning benchmark over candidate runtime settings; requires TTS venv and model dependencies.",
+      "tier": "bench",
+      "default": false,
+      "cwd": ".",
+      "python": "tts/.venv/bin/python",
+      "env": {"PYTHONPATH": "."},
+      "commands": [["python", "scripts/tune_tts_indic_mio.py"]]
+    },
+    "tts-client": {
+      "description": "Manual live TTS gRPC client check; requires a running TTS service.",
+      "tier": "integration",
+      "default": false,
+      "cwd": "tts",
+      "python": ".venv/bin/python",
+      "env": {"PYTHONPATH": "."},
+      "commands": [["python", "tests/test_client.py"]]
+    }
+  }
+}
